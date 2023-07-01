@@ -25,55 +25,7 @@ import networkx as nx
 import pickle
 
 
-def get_bipartite_adjacency_matrix_kcore(positions, k_core=(5, 2)):
-    """
-    Construct the adjacency matrix A from the positions dataframe; A is a pandas dataframe
-    :param positions (pandas dataframe): the positions dataframe
-    :param k_core (tuple): the minimum number of clients and bills for the k-core
-    :return A (pandas dataframe): the adjacency matrix
-    """
 
-    # Keep only rows with a client_uuid and a bill_identifier and a position_numeric in [-1, 1]
-    selection = positions[positions.client_uuid.notnull()].copy()
-    selection = selection[selection.bill_identifier.notnull()].copy()
-    selection = selection[selection.position_numeric.isin([-1, 1])].copy()
-
-    # Calculate number of positions per client and bill
-    n_client_positions = selection.client_uuid.value_counts()
-    n_bill_positions = selection.bill_identifier.value_counts()
-
-    # Keep only clients and bills with at least k_core[0] and k_core[1] positions, respectively
-    selection = selection[selection.client_uuid.map(n_client_positions) >= shape[0]]
-    selection = selection[selection.bill_identifier.map(n_bill_positions) >= shape[1]]
-
-    # Calculate the adjacency matrix
-    A = selection.groupby(['client_uuid', 'bill_identifier']).position_numeric.sum().unstack()
-
-    # Because clients can record multiple positions on the same bill, some values in A can be > 1 or < -1
-    # We set these values to 1 or -1, respectively
-    A = np.sign(A)
-
-    # Delete the selection of the positions dataframe to save memory
-    del selection
-
-    # Create the k-core of the adjacency matrix by iteratively removing nodes with degree < k_core[0]
-    # and nodes with degree < k_core[1], for clients and bills, respectively, until no such nodes remain
-    while any(abs(A).sum(1) < shape[0]) or any(abs(A).sum(0) < shape[1]):
-        A = A.loc[abs(A).sum(1) >= shape[0], :]
-        A = A.loc[:, abs(A).sum(0) >= shape[1]]
-
-    G = nx.from_edgelist(A.stack().dropna().reset_index().values[:, :2].tolist())
-    components = sorted(nx.connected_components(G), key=len)
-
-    # If there are no connected components, return None
-    if len(components) == 0:
-        return None
-
-    # Remove any connected components that are not connected to the largest connected component
-    c = components[-1]
-    A = A.reindex(index=sorted(c & {*A.index.values}), columns=sorted(c & {*A.columns.values}))
-
-    return A
 
 
 def get_bipartite_graph(A, allowed_positions=[1, -1]):

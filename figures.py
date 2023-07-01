@@ -11,25 +11,8 @@ import matplotlib as mpl
 
 from matplotlib.patches import Rectangle
 
+from utils import adjust_label
 
-def adjust_label(label):
-    """
-    Adjust the label for an industry so that it is more readable
-    :param label: an FTM industry name
-    :return:
-    """
-
-    # Assert that the label is a string in the data/fmt_indstries.txt file
-    assert label.upper() in open('data/ftm_industries.txt').read().split('\n')
-
-    # If using latex, replace ampersands with LaTeX-friendly ampersands
-    if plt.rcParams['text.usetex']:
-        label = label.replace('&', '\&')
-
-    # Split the label by '_' and take the last part of the label, which is the industry
-    # (the first part is the sector)
-    label = label.split('_')[-1].title()
-    return label
 
 def plot_top_industries_figure(positions):
     """
@@ -446,5 +429,144 @@ def plot_topic_correlations_figures(positions: pd.DataFrame,
         fig.savefig('figures/figure_3.pdf', bbox_inches='tight')
         fig.savefig('figures/figure_3.png', bbox_inches='tight', dpi=300)
         plt.show()
+
+
+def plot_agree_probabilities(agree_probabilities, disagree_probabilities):
+    """
+
+    :param agree_probabilities:
+    :param disagree_probabilities:
+    :return:
+    """
+
+    # Take the geometric mean of the probabilities because they are highly skewed
+    def geo_mean(iterable):
+        a = np.array(iterable)
+        return a.prod()**(1.0/len(a))
+
+    # Sort the industries by their (geometric) average probability of agreeing with
+    # the pro-environmental policy groups
+    most_friendly = abs(agree_probabilities).apply(geo_mean, 1).sort_values()[::-1][:10]
+    most_unfriendly = abs(disagree_probabilities).apply(geo_mean, 1).sort_values()[::-1][:10]
+
+    flip_sign = 0
+
+    fig, axes = plt.subplots(2,1, figsize = (6.5,8), sharex=True)
+
+    for table_data in [
+        agree_probabilities.reindex(most_friendly.index.values).round(2),
+        disagree_probabilities.reindex(most_unfriendly.index.values).round(2)
+        ]:
+        ax = axes[flip_sign]
+        table_data.index = table_data.index.map(
+            lambda x: x.split('_')[1].replace('_', ' ').title().replace('&', '\&').replace("'S", "'s"))
+
+        cm = mpl.colors.LinearSegmentedColormap.from_list(
+            "mycmap",
+            [['white', 'yellowgreen'], ['white', 'crimson']][flip_sign])
+
+        ax = sns.heatmap(
+            abs(table_data) * 100,
+            cmap=cm,
+            vmin=0,
+            vmax=20,
+            ax=ax,
+            square=True,
+            linewidths=1,
+            linecolor='white',
+            annot=True, fmt=".0f",
+            cbar_kws={'format': '%.0f', 'label': 'P(' + ['support', 'oppose'][flip_sign] + ') [\%]'}
+        )
+
+        ax.set_ylabel("")
+
+        ax.set_title(f"One-way {['support', 'oppose'][flip_sign]} probability towards Pro-Environmental Policy\n")
+
+        flip_sign = 1
+
+    # axes[0].set_xticklabels(None)
+    axes[0].get_xaxis().set_visible(False)
+    ax.set_xlabel("\n\n\n\n\nState and Record Type")
+
+    new_labels = []
+    i = 0
+    testimony_start = 0
+    for t in ax.get_xticklabels():
+        state, rectype = t.get_text().split('-')
+        new_labels.append(state)
+        if rectype == "testimony":
+            testimony_start = i
+        else:
+            i += 1
+
+    kwargs = dict(horizontalalignment='center', xycoords='data',
+                  arrowprops={'arrowstyle': '|-|', 'color': 'k', 'mutation_scale': 1.5}, annotation_clip=False)
+
+    ax.annotate("", [0, 11], [testimony_start, 11], **kwargs)
+    ax.annotate("", [testimony_start, 11], [len(new_labels), 11], **kwargs)
+
+    kwargs.update(arrowprops=None)
+    ax.annotate("Lobbying", [testimony_start / 2, 12], **kwargs)
+    ax.annotate("Testimony", [testimony_start + (len(new_labels) - testimony_start) / 2, 12], **kwargs)
+
+    _ = ax.set_xticklabels(new_labels, rotation=0)
+
+    fig.savefig('figures/figure_4.pdf', bbox_inches='tight')
+    fig.savefig('figures/figure_4.png', bbox_inches='tight', dpi=300)
+    plt.show()
+
+def plot_partisanship_figure(plotdata):
+    """
+
+    :param plotdata:
+    :return:
+    """
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(9, 2.5), sharey=True)
+
+    norm = plt.Normalize(plotdata['MiningPctGdp'].min(), plotdata['MiningPctGdp'].max())
+    sm = plt.cm.ScalarMappable(cmap="magma_r", norm=norm)
+    sm.set_array([])
+
+    for ax, yval in zip(
+            [ax1, ax2, ax3],
+            ['EnviroAvgPos', 'OilGasAvgPos', 'ElcUtlAvgPos']):
+        sns.scatterplot(x='AvgPartisanship',
+                        y=yval,
+                        data=plotdata,
+                        hue='MiningPctGdp',
+                        edgecolor='k',
+                        markers={True: 'o', False: 'P'},
+                        style='deregulated',
+                        alpha=0.7,
+                        ax=ax,
+                        legend=False,
+                        palette='magma_r'
+                        )
+
+    for ax in (ax1, ax2, ax3):
+        xlim, ylim = ax.get_xlim(), ax.get_ylim()
+        ax.vlines(0, -2, 2, 'grey', ':', zorder=-100)
+        ax.hlines(0, -2, 2, 'grey', ':', zorder=-100)
+        ax.set_xlim(*xlim)
+        ax.set_ylim(-0.4, 0.4)
+
+    ax1.set_ylabel("Avg. position on passed bills")
+    ax1.set_xlabel("Leg. ideology")
+    ax2.set_xlabel("Leg. ideology")
+    ax3.set_xlabel("Leg. ideology")
+
+    ax2.yaxis.set_visible(False)
+    ax3.yaxis.set_visible(False)
+
+    ax1.set_title("Pro-Environmental Policy", fontsize=10)
+    ax2.set_title("Oil \& Gas/Mining", fontsize=10)
+    ax3.set_title("Electric Utilities", fontsize=10)
+
+    cbar = fig.colorbar(sm, ax=(ax1, ax2, ax3))
+    cbar.ax.set_ylabel('Fossil Fuel \% of GDP')
+
+    fig.savefig('figures/figure_5.pdf', bbox_inches='tight')
+    fig.savefig('figures/figure_5.png', bbox_inches='tight', dpi=300)
+    plt.show()
 
 
