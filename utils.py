@@ -124,8 +124,8 @@ def grouped_oneway_alignment_matrix(positions, k_core, allowed_positions, groups
 
 def adjust_label(label):
     """
-    Adjust the label for an industry so that it is more readable
-    :param label: an FTM industry name
+    Adjust the label for an industry_id so that it is more readable
+    :param label: an FTM industry_id name
     :return:
     """
 
@@ -136,7 +136,7 @@ def adjust_label(label):
     if plt.rcParams['text.usetex']:
         label = label.replace('&', '\&')
 
-    # Split the label by '_' and take the last part of the label, which is the industry
+    # Split the label by '_' and take the last part of the label, which is the industry_id
     # (the first part is the sector)
     label = label.split('_')[-1].title()
 
@@ -148,20 +148,62 @@ def adjust_label(label):
 def get_expected_agreements(
         adj_matrix,
         ftm_industries,
-        allowed=None,
+        relation='support',
         source_industry='IDEOLOGY/SINGLE ISSUE_PRO-ENVIRONMENTAL POLICY',
 ):
     """
+    Calculate the expected agreements between each industry_id and the source_industry. This is done by calculating
+    the average number of supporting or opposing positions that each industry_id has on bills that the source_industry
+    has a position on, divided by the total number of bills that the source_industry has a position on, and then
+    divided by the total number of interest groups in each industry_id.
 
-    :param adj_matrix:
-    :param ftm_industries:
-    :param allowed:
-    :param source_industry:
-    :return:
+    Formally, let B be the bipartite adjacency matrix, where B[i, j] = 1 if interest group i supports bill j,
+    B[i, j] = -1 if interest group i opposes bill j, and B[i, j] = 0 otherwise. Let S be the set of interest groups
+    in the source industry_id, and let I be the set of interest groups in the industry_id of interest.
+
+    The agreement/disagreement tensor is given by:
+
+        A_{i,j,b} = \delta_{B[i, b], B[j, b]} - \delta_{B[i, b], -B[j, b]}
+
+    where \delta_{i, j} is the Kronecker delta function.
+
+    In the "agree" case, we then calculate the sum total of agreements between the source industry_id and the industry_id
+    of interest by summing over the first two indices of A wherever A is equal to 1:
+
+        T_{S, I} = sum_{i in S} sum_{j in I} A_{i, j, b} * \delta_{A_{i, j, b}, 1}
+
+    To calculate the expected agreement between the source industry_id and the industry_id of interest, we divide by
+    the total number of bills that the source industry_id has a position on, and then divide by the total number of
+    interest groups in the industry_id of interest:
+
+        E[agreement] = (1 / |S|) * (1 / |I|) * sum_{i in S} sum_{j in I} A_{i, j, b}
+
+    To calculate the expected disagreement between the source industry_id and the industry_id of interest, we follow the
+    same procedure, but sum over the first two indices of A wherever A is equal to -1:
+
+        E[disagreement] = (1 / |S|) * (1 / |I|) * sum_{i in S} sum_{j in I} A_{i, j, b} * \delta_{A_{i, j, b}, -1}
+
+    And finally, to calculate the expected net agreement between the source industry_id and the industry_id of interest,
+    we follow the same procedure, but sum over the first two indices of A wherever A is equal to 1 or -1:
+
+        E[net agreement] = (1 / |S|) * (1 / |I|) * sum_{i in S} sum_{j in I} A_{i, j, b} * \delta_{A_{i, j, b}, 1 or -1}
+
+    :param adj_matrix: the adjacency matrix
+    :param ftm_industries: a pandas dataframe with the industry_id names
+    :param relation: the type of agreement to calculate. Must be one of 'support', 'oppose', or 'net'
+    :param source_industry: the industry_id to compare all other industry_ids to
+    :return: a pandas dataframe with the expected agreements between each industry_id and the source_industry
     """
 
-    if allowed is None:
-        allowed = [1]
+    assert relation in ['support', 'oppose', 'net'], "relation must be one of 'support', 'oppose', or 'net'"
+    assert source_industry in ftm_industries.values(), "source_industry must be in ftm_industries.industry_id"
+
+    if relation == 'support':
+        allowed_positions = [1]
+    elif relation == 'oppose':
+        allowed_positions = [-1]
+    else:
+        allowed_positions = [-1, 1]
 
     # Replace NaN values with 0
     adj_matrix = adj_matrix.replace(np.nan, 0)
@@ -171,13 +213,12 @@ def get_expected_agreements(
     b = sparse.COO.from_numpy(adj_matrix.values[:, None])
     c = a * b
     d = c.copy() * (c == 0)
-    for k in allowed:
+    for k in allowed_positions:
         d += c * (c == k)
 
     # 1. select an environmental group's position on a bill
-    # 2. count how many groups from industry X support/oppose that position
-    # 3. average this across all environmental groups' positions
-
+    # 2. count how many groups from industry_id X support/oppose that position
+    # 3. average this across all environmental groups' positions on bills
     idx_to_client = dict(zip(range(len(adj_matrix.index)), adj_matrix.index.values))
     idx_to_bill = dict(zip(range(len(adj_matrix.columns)), adj_matrix.columns.values))
 
@@ -192,11 +233,70 @@ def get_expected_agreements(
 
     data = data[data.source != data.target]
 
-    expected_agreements = data[data.source_ftm == source_industry].groupby(['source', 'bill', 'target_ftm'])[
+    summed_relations = data[data.source_ftm == source_industry].groupby(['source', 'bill', 'target_ftm'])[
         3].sum().unstack().replace(np.nan, 0).sum()
 
     industry_counts = data.drop_duplicates('target').target_ftm.value_counts()
 
-    expected_agreements_pct = (expected_agreements / source_num_positions / industry_counts).dropna()
+    normalized_summed_positions = (summed_relations / source_num_positions / industry_counts).dropna()
 
-    return expected_agreements_pct.sort_values()
+    return normalized_summed_positions.sort_values()
+
+class ConfigurationModel:
+    """
+    A configuration model for generating random bipartite graphs.
+    This is a simple implementation of the configuration model described in
+    Newman, M. E. J., Strogatz, S. H., & Watts, D. J. (2001). Random graphs with arbitrary degree distributions and
+    their applications. Physical Review E, 64(2), 026118. https://doi.org/10.1103/PhysRevE.64.026118
+    """
+
+    def from_positions(positions):
+        edges = positions[positions.position_numeric.isin([1,-1])].drop_duplicates(['client_uuid', 'bill_identifier'])[['client_uuid', 'bill_identifier', 'position_numeric']]
+        configmodel = ConfigurationModel(edges.values)
+        configmodel.positions = positions
+        return configmodel
+
+    def __init__(self, edges):
+        self.edges = edges
+        self.ig_stubs = pd.DataFrame([[ig, pos] for ig, bill, pos in edges])
+        self.bill_stubs = pd.DataFrame([[bill, pos] for ig, bill, pos in edges])
+        self.blocks = {}
+
+    def sample(self, position=None):
+
+        if position is None:
+            i = self.ig_stubs.sample(len(self.ig_stubs), replace=False).reset_index(drop=True)
+            b = self.bill_stubs.sample(len(self.bill_stubs), replace=False).reset_index(drop=True)
+        elif position in [-1,1]:
+            i = self.ig_stubs[self.ig_stubs[1]==position].sample(len(self.ig_stubs[self.ig_stubs[1]==position]), replace=False).reset_index(drop=True)
+            b = self.bill_stubs[self.bill_stubs[1]==position].sample(len(self.bill_stubs[self.bill_stubs[1]==position]), replace=False).reset_index(drop=True)
+        else:
+            raise ValueError(f"position is {position}, but must be either None, 1, or -1.")
+
+        i_pos = i[i[1] == 1]
+        b_pos = b[b[1] == 1]
+        i_neg = i[i[1] == -1]
+        b_neg = b[b[1] == -1]
+
+        positive_edges = pd.concat([i_pos, b_pos], axis=1).iloc[:,:3]
+        negative_edges = pd.concat([i_neg, b_neg], axis=1).iloc[:,:3]
+
+        edges = pd.concat([positive_edges, negative_edges])
+
+        edges.columns = ['client_uuid', 'position_numeric', 'bill_identifier']
+        edges['client_block'] = edges.client_uuid.map(self.blocks)
+        edges['bill_block'] = edges.bill_identifier.map(self.blocks)
+
+        return edges
+
+    def baseline(self, position=None):
+        edges = pd.DataFrame(self.edges, columns = ['client_uuid', 'bill_identifier', 'position_numeric'])
+        edges['client_block'] = edges.client_uuid.map(self.blocks)
+        edges['bill_block'] = edges.bill_identifier.map(self.blocks)
+
+        if position in [-1,1]:
+          edges = edges[edges.position_numeric==position]
+        elif position is not None:
+          raise ValueError(f"position is {position}, but must be either None, 1, or -1.")
+
+        return edges

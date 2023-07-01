@@ -29,7 +29,7 @@ def plot_top_industries_figure(positions):
     top_industries = no_civil_servants_no_duplicates_positions.groupby('state').ftm_industry.value_counts(
         normalize=True).unstack().mean().sort_values()[::-1][:20].index.values
 
-    # Collect the percentage of positions by each industry in each state
+    # Collect the percentage of positions by each industry_id in each state
     industry_percentages = no_civil_servants_no_duplicates_positions.groupby(
         ['record_type', 'state']).ftm_industry.value_counts(normalize=True).unstack()
     industry_percentages.loc[''] = None
@@ -59,20 +59,20 @@ def plot_top_industries_figure(positions):
         annot=True, fmt=".1f"
     )
 
-    # Highlight top industry in each state
+    # Highlight top industry_id in each state
     for state, row in table_data.iterrows():
 
         if state == "":
             continue
 
-        # Get the top industry for this state
+        # Get the top industry_id for this state
         top_industry = row.idxmax()
 
-        # Get the x and y coordinates of the top industry in the heatmap
+        # Get the x and y coordinates of the top industry_id in the heatmap
         y = table_data.columns.get_loc(top_industry)
         x = table_data.index.get_loc(state)
 
-        # Plot a black box around the top industry
+        # Plot a black box around the top industry_id
         ax.add_patch(Rectangle((x, y), 1, 1, fill=False, edgecolor='k', lw=3))
 
     ax.set_ylabel("Industry")
@@ -120,7 +120,7 @@ def plot_top_industries_figure(positions):
         labelbottom=True)
 
     # Format colorbar
-    cbar_ax.set_xlabel("Percent of positions from industry (incl. neutral)")
+    cbar_ax.set_xlabel("Percent of positions from industry_id (incl. neutral)")
     cbar_ax.set_xticks([0, 5, 10, 15, 20, 25])
     cbar_ax.set_xticklabels([f"{i:.0f}%" for i in [0, 5, 10, 15, 20, 25]])
     [s.set_visible(True) for s in cbar_ax.spines.values()]
@@ -211,7 +211,7 @@ def plot_topic_correlations_figures(positions: pd.DataFrame,
     adj_matrix['passed'] = adj_matrix.index.map(bills.set_index('bill_identifier').status.isin([4, 5]).to_dict())
 
 
-    # Divide industry sums by number of interest groups per industry in each state
+    # Divide industry_id sums by number of interest groups per industry_id in each state
     adj_matrix[industries] = adj_matrix[industries] / adj_matrix['state'].apply(lambda state: n_clients.loc[state])
 
     adj_matrix_intersection = adj_matrix.replace(0, np.nan)
@@ -548,7 +548,7 @@ def plot_partisanship_figure(plotdata):
         ax.vlines(0, -2, 2, 'grey', ':', zorder=-100)
         ax.hlines(0, -2, 2, 'grey', ':', zorder=-100)
         ax.set_xlim(*xlim)
-        ax.set_ylim(-0.4, 0.4)
+        ax.set_ylim(-1.1, 1.1)
 
     ax1.set_ylabel("Avg. position on passed bills")
     ax1.set_xlabel("Leg. ideology")
@@ -568,5 +568,8 @@ def plot_partisanship_figure(plotdata):
     fig.savefig('figures/figure_5.pdf', bbox_inches='tight')
     fig.savefig('figures/figure_5.png', bbox_inches='tight', dpi=300)
     plt.show()
+
+
+def plot_probability_utilities_oppose()
 
 
