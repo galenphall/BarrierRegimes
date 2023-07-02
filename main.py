@@ -60,10 +60,10 @@ if __name__ == '__main__':
         'Emissions'
     ]
 
-    bill_topic_correlations.main(comparison_industries, comparison_topics)
-
-    environmental_industry_agree_probabilities.main()
-
-    structural_factors.main()
+    # bill_topic_correlations.main(comparison_industries, comparison_topics)
+    #
+    # environmental_industry_agree_probabilities.main()
+    #
+    # structural_factors.main()
 
     electric_utilities_disagreements.main()

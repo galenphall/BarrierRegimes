@@ -24,6 +24,8 @@ def main():
     for year in years:
         production[year] = production[year].apply(cast_float)
 
+    # Calculate the percent of state GDP from mining (which includes fossil fuel
+    # extraction) and petrochemical production/refining.
     mining_percent_gdp = production.groupby('state').apply(
         lambda region: (
                 region[region.IndustryClassification.isin(["21", "324"])][years].sum(0) /
@@ -39,6 +41,14 @@ def main():
         ['state', 'unified_session']).count().index
 
     def industry_passed_session_stats(industry_id):
+        """
+        Calculate the average position on passed bills for a given industry or
+        set of industries
+        :param industry_id: A string or list of strings of industry ids
+        :return: A dataframe with the average position on passed bills for each
+        state and year from the given industry
+        """
+        # Select positions from this industry/ies
         if isinstance(industry_id, str):
             industry_positions = positions[
                 positions.ftm_industry == industry_id
@@ -50,11 +60,15 @@ def main():
         else:
             raise ValueError("industry_id must be a string or list of strings")
 
-        industry_positions = industry_positions.sort_values('start_date')[::-1].drop_duplicates(
+        # Select the latest available positions from each client on each bill,
+        # as these are the positions stated on the version closest to the one which actually passed
+        industry_positions = industry_positions.sort_values('start_date', ascending=False).drop_duplicates(
             ['client_uuid', 'bill_identifier'])
 
-        session_to_year = positions.set_index('unified_session').year.to_dict()
+        # Map the session of each bill's passage to its year
+        session_to_year = positions.groupby('unified_session').year.max().to_dict()
 
+        # Select positions on passed bills
         industry_positions_passed_bills = industry_positions[industry_positions.bill_identifier.map(passed)]
         net = industry_positions_passed_bills.groupby(['state', 'unified_session']).position_numeric.sum().reindex(
             state_year_index)
@@ -62,7 +76,6 @@ def main():
             state_year_index)
         passed_n_bills = industry_positions_passed_bills.groupby(
             ['state', 'unified_session']).bill_identifier.nunique().reindex(state_year_index)
-
         clients_in_industry = industry_positions.groupby('state').client_uuid.nunique()
 
         data = pd.concat([net, passed_n_positions, passed_n_bills], axis=1).reset_index(drop=False)
@@ -70,39 +83,28 @@ def main():
         data['clients_in_industry'] = data.state.map(clients_in_industry)
         data['year'] = data.unified_session.map(session_to_year)
         data = data.groupby(['state', 'year']).sum(numeric_only=True)
-        data['passed_net_pos_ratio'] = data.net_on_passed / (data.clients_in_industry * data.n_bills_passed)
         data['passed_avg_pos'] = data.net_on_passed / data.n_positions_on_passed
 
         return data
 
+    # Get the average position on passed bills for each industry
     enviro_positions = industry_passed_session_stats('IDEOLOGY/SINGLE ISSUE_PRO-ENVIRONMENTAL POLICY')
     oilgas_positions = industry_passed_session_stats(
         ['ENERGY & NATURAL RESOURCES_OIL & GAS', 'ENERGY & NATURAL RESOURCES_MINING'])
     elcutl_positions = industry_passed_session_stats('ENERGY & NATURAL RESOURCES_ELECTRIC UTILITIES')
 
+    # Calculate average partisanship between both chambers in each state and year
     avgpartisanship = partisanship.groupby(['st', 'year']).apply(
         lambda x: x[['hou_chamber', 'sen_chamber']].mean().mean())
     avgpartisanship.name = 'AvgPartisanship'
 
     plotdata = pd.concat([mining_percent_gdp,
                           avgpartisanship,
-                          enviro_positions.net_on_passed,
-                          enviro_positions.passed_net_pos_ratio,
                           enviro_positions.passed_avg_pos,
-                          oilgas_positions.net_on_passed,
-                          oilgas_positions.passed_net_pos_ratio,
                           oilgas_positions.passed_avg_pos,
-                          elcutl_positions.net_on_passed,
-                          elcutl_positions.passed_net_pos_ratio,
                           elcutl_positions.passed_avg_pos], axis=1).reset_index()
-
-    plotdata = plotdata.rename(columns={'level_0': 'state'})
     plotdata.columns = [
-        'state', 'year', 'MiningPctGdp', 'AvgPartisanship',
-        'EnviroNetPos', 'EnviroNetPosRatio', 'EnviroAvgPos',
-        'OilGasNetPos', 'OilGasNetPosRatio', 'OilGasAvgPos',
-        'ElcUtlNetPos', 'ElcUtlNetPosRatio', 'ElcUtlAvgPos']
-
+        'state', 'year', 'MiningPctGdp', 'AvgPartisanship','EnviroAvgPos','OilGasAvgPos','ElcUtlAvgPos']
     plotdata['deregulated'] = plotdata.state.map(deregulated)
     plotdata = plotdata[plotdata.state.isin(positions.state.unique())]
 

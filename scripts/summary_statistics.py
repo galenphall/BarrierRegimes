@@ -3,6 +3,10 @@ import pandas as pd
 from main import positions
 
 def main():
+    """
+    This function generates summary statistics for the data.
+    :return: None
+    """
     n_records = positions.groupby(['state', 'record_type']).apply(len)
     n_positions = positions.drop_duplicates(['client_uuid', 'bill_identifier']).groupby(['state', 'record_type']).apply(
         len)
