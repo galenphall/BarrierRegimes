@@ -1,15 +1,11 @@
 import pandas as pd
 from matplotlib import pyplot as plt
-import electric_utilities_disagreements
+from utils import extract_and_normalize_topics
 
-data_loc = 'data/'
-
-# Load data
+# Initialize data and load it into memory
 positions = pd.read_parquet('data/climate_energy_positions.parquet', engine='pyarrow')
 clients = pd.read_parquet('data/climate_energy_clients.parquet')
 bills = pd.read_parquet('data/climate_energy_bills.parquet')
-all_bill_blocks = pd.read_excel('data/bill_blocks.xlsx')
-all_client_blocks = pd.read_excel('data/client_blocks.xlsx')
 
 # Create mapping from client_uuid to FTM industry_id
 client_uuid_to_ftm_industry = clients.set_index('client_uuid').ftm.to_dict()
@@ -23,68 +19,51 @@ production = pd.read_csv('data/statemetadata/industrygdp.csv')
 # State utility regulatory status
 deregulated = pd.read_csv('data/statemetadata/deregulated.csv').set_index('state').deregulated.to_dict()
 
-
 # Save the unique FTM industries to a file
 with open('data/ftm_industries.txt', 'w') as f:
     f.write('\n'.join(sorted(positions.ftm_industry.unique())))
+
+# Create a dataframe of dummy columns for each topic.
+topics = bills[['ncsl_topics', 'ael_category']].apply(
+    lambda row: extract_and_normalize_topics(*row.values),
+    axis=1
+)
+topics_dummies = pd.DataFrame(topics.str.split(',').apply(
+    lambda x: {key: 1 for key in x}).values.tolist()
+                              ).fillna(0)
+
+topics_dummies.index = bills.bill_identifier
+topics_dummies = topics_dummies.groupby(topics_dummies.index).max()
+
 
 if __name__ == '__main__':
     # plt.rcParams['text.usetex'] = True
     plt.rcParams['xtick.direction'] = 'in'
     plt.rcParams['ytick.direction'] = 'in'
 
-    ###############################
-    # Figure 1: Proportion of positions by each industry_id in each state
-    ###############################
-    # Identify the 20 most prevalent industries by number of unique bills lobbied on;
-    # we take this as a mean-of-means of the proportion of bills lobbied on by each industry_id
-    # in each state, excluding civil servants.
+    # We need to import these here to avoid circular imports
+    from scripts import bill_topic_correlations, most_active_industries, structural_factors, \
+    electric_utilities_disagreements, environmental_industry_agree_probabilities
 
-    no_civil_servants_no_duplicates_positions = positions[
-        positions.ftm_industry.notna() &
-        ~positions.ftm_industry.astype(str).str.contains('CIVIL SERVANTS/PUBLIC OFFICIALS')].drop_duplicates([
-        'client_uuid', 'bill_identifier',
-    ])  # remove duplicate positions on the same bill and remove civil servants
+    top_industries = most_active_industries.main()
 
-    top_industries = no_civil_servants_no_duplicates_positions.groupby('state').ftm_industry.value_counts(
-        normalize=True).unstack().mean().sort_values()[::-1][:20].index.values
+    # Compare Pro-Environmental Policy groups to the top 10 other industries
+    # on an array of topics related to energy and emissions
+    comparison_industries = [top_industries[0], *top_industries[2:11]][::-1]
+    comparison_topics = [
+        'Renewable Energy Wind',
+        'Renewable Energy Solar',
+        'Fossil Energy Coal',
+        'Fossil Energy Natural Gas',
+        'Nuclear Energy Facilities',
+        'Energy Efficiency',
+        'Emissions'
+    ]
 
-    # plot_top_industries_figure(positions)
+    bill_topic_correlations.main(comparison_industries, comparison_topics)
 
-    ###############################
-    # Table 1: Summary statistics
-    ###############################
+    environmental_industry_agree_probabilities.main()
 
-    n_records = positions.groupby(['state', 'record_type']).apply(len)
-    n_positions = positions.drop_duplicates(['client_uuid', 'bill_identifier']).groupby(['state', 'record_type']).apply(
-        len)
-
-    n_bills = positions.groupby(['state', 'record_type']).bill_identifier.nunique()
-    n_clients = positions.groupby(['state', 'record_type']).client_uuid.nunique()
-
-    years_covered = positions.groupby(['state', 'record_type']).year.apply(lambda y: f"{min(y)}-{max(y)}")
-
-    table_1 = pd.concat([n_records, n_positions, n_bills, n_clients, years_covered], axis=1)
-    table_1 = table_1.reindex(years_covered.index)
-    table_1.columns = ['Records', 'Unique Positions', 'Bills', 'IGs', 'Years']
-    table_1.index.names = ['State', 'Record Type']
-    table_1.to_excel('tables/summary_statistics.xlsx')
-
-    ###############################
-    # Figure 2 and 3: bill topic-industry_id correlations
-    ###############################
-
-    comparison_industries = [top_industries[0], *top_industries[2:11]]
-    # plot_topic_correlations_figures(positions, bills, comparison_industries[::-1])
-
-    # agree_disagree_figures.main()
-
-    # structural_factors.main()
-
-    ###############################
-    # Probability that Electric Utilities disagree with Pro-Environmental Policy
-    ###############################
+    structural_factors.main()
 
     electric_utilities_disagreements.main()
-
-

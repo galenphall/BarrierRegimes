@@ -1,44 +1,23 @@
 import re
 import textwrap
 from collections import defaultdict
-
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from adjustText import adjust_text
 from matplotlib import pyplot as plt
-from scipy.stats import pearsonr, linregress
 import matplotlib as mpl
-
+from scipy.stats import pearsonr, linregress
 from matplotlib.patches import Rectangle
-
 from utils import adjust_label
 
 
-def plot_top_industries_figure(positions):
+def plot_top_industries_figure(table_data):
     """
     Create Figure 1: Heatmap of top industries in each state
-    :param positions: the positions dataframe
+    :param positions: the positions dataframe, deduplicated and with civil servants removed
     :return: None
     """
-    no_civil_servants_no_duplicates_positions = positions[
-        positions.ftm_industry.notna() &
-        ~positions.ftm_industry.astype(str).str.contains('CIVIL SERVANTS/PUBLIC OFFICIALS')].drop_duplicates([
-        'client_uuid', 'bill_identifier',
-    ])  # remove duplicate positions on the same bill and remove civil servants
-
-    top_industries = no_civil_servants_no_duplicates_positions.groupby('state').ftm_industry.value_counts(
-        normalize=True).unstack().mean().sort_values()[::-1][:20].index.values
-
-    # Collect the percentage of positions by each industry_id in each state
-    industry_percentages = no_civil_servants_no_duplicates_positions.groupby(
-        ['record_type', 'state']).ftm_industry.value_counts(normalize=True).unstack()
-    industry_percentages.loc[''] = None
-    industry_percentages.loc['Total'] = industry_percentages.mean()
-
-    # Create a table of the top industries in each state
-    table_data = (industry_percentages[top_industries] * 100).round(2).replace(0, np.nan)
-    table_data.columns = table_data.columns.str.split("_").str[1].str.title()
-
     # Replace ampersands with LaTeX-friendly ampersands, if we are using LaTeX
     if plt.rcParams['text.usetex']:
         table_data.columns.str.replace("&", r"\&")
@@ -73,7 +52,8 @@ def plot_top_industries_figure(positions):
         x = table_data.index.get_loc(state)
 
         # Plot a black box around the top industry_id
-        ax.add_patch(Rectangle((x, y), 1, 1, fill=False, edgecolor='k', lw=3))
+        # Ensure the box is not cut off by bounds of the heatmap
+        ax.add_patch(Rectangle((x, y), 1, 1, fill=False, edgecolor='k', lw=3, clip_on=False))
 
     ax.set_ylabel("Industry")
     ax.set_xlabel("\n\nState and Record Type")
@@ -125,311 +105,201 @@ def plot_top_industries_figure(positions):
     cbar_ax.set_xticklabels([f"{i:.0f}%" for i in [0, 5, 10, 15, 20, 25]])
     [s.set_visible(True) for s in cbar_ax.spines.values()]
 
-    fig.savefig('figures/top_20_industries.png', dpi=300, bbox_inches='tight')
+    fig.savefig('figures/figure_1.png', dpi=300, bbox_inches='tight')
+    fig.savefig('figures/figure_1.pdf', bbox_inches='tight')
     plt.show()
 
 
-def plot_topic_correlations_figures(positions: pd.DataFrame,
-                                    bills: pd.DataFrame,
-                                    comparison_industries: list,
-                                    do_scatterplots=True,
-                                    do_correlations=True
-                                    ):
-    """
-    Creates a scatterplot showing the average position of Electric Utilities against the
-    average position of Pro-Environmental Policy groups for bills in two topic categories:
-    Renewable Energy - Wind and Renewable Energy - Solar.
+def plot_topic_correlation_coefficients(comparison_industries, intersection_correlations, union_correlations):
+    fig, axes = plt.subplots(1, 2, figsize=(8, 11), sharex=True, sharey=True)
 
-    :param positions: the positions dataframe
-    :param bills: the bills dataframe
-    :param comparison_industries: the comparison industries list
-    :param do_scatterplots: whether to create scatterplots
-    :param do_correlations: whether to calculate correlations
-    :return: None
-    """
+    # Map each comparison to a color
+    palette = sns.color_palette('tab10', n_colors=len(comparison_industries))
+    comparison_colors = dict(zip(comparison_industries, palette))
+    n_comparisons = len(comparison_industries)
 
-    ###############################
-    # Create data for scatterplot #
-    ###############################
+    def plot_correlations(correlations, ax):
+        """
+        Plot the correlations
+        :param correlations: dict of dicts of correlations
+        :param ax: axis to plot on
+        :return: ax
+        """
 
-    # Extract clean ncsl topic_name from the topic_name column
-    def process_ncsl(topic_name):
-        topics_split = topic_name.split(';')
-        return [
-            t.split('__')[-1].replace('_', ' ').title()
-            for t in topics_split if 'energy' in t]
+        topic_y = 0  # y position of the topic
+        for topic in correlations:
 
-    # Extract clean ael and ncsl topic_name from the topic_name column
-    def extract_and_normalize_topics(ncsl, ael):
-        topics_to_add = []
-        if isinstance(ael, str):
-            topics_to_add += [ael]
-        if isinstance(ncsl, str):
-            ncsl_topics = process_ncsl(ncsl)
-            for topic in ncsl_topics:
-                topics_to_add += [topic]
-
-        topics_to_add = set(topics_to_add)
-
-        return ','.join(topics_to_add)
-
-    # Create a dataframe of dummy columns for each topic.
-    topics = bills[['ncsl_topics', 'ael_category']].apply(
-        lambda row: extract_and_normalize_topics(*row.values),
-        axis=1
-    )
-    topics_dummies = pd.DataFrame(topics.str.split(',').apply(
-        lambda x: {key: 1 for key in x}).values.tolist()
-                                  ).replace(np.nan, 0)
-
-    topics_dummies.index = bills.bill_identifier
-    topics_dummies = topics_dummies.groupby(topics_dummies.index).max()
-
-    adj_matrix = positions[
-        positions.client_uuid.isin(positions.client_uuid)  # Keep only active interest groups
-    ].drop_duplicates(['bill_identifier', 'client_uuid']).pivot_table(
-        'position_numeric',
-        'bill_identifier',
-        'ftm_industry',
-        'sum')
-
-    n_clients = positions[
-        positions.client_uuid.isin(positions.client_uuid)  # Keep only active interest groups
-    ].pivot_table(
-        'client_uuid',
-        'state',
-        'ftm_industry',
-        'nunique')
-
-    # Retain the industries in A
-    industries = [*adj_matrix.columns]
-
-    # Extract state from bill identifiers
-    adj_matrix['state'] = adj_matrix.index.map(lambda bill_identifier: bill_identifier[:2])
-
-    # Boolean - whether or not bill passed legislature
-    adj_matrix['passed'] = adj_matrix.index.map(bills.set_index('bill_identifier').status.isin([4, 5]).to_dict())
-
-
-    # Divide industry_id sums by number of interest groups per industry_id in each state
-    adj_matrix[industries] = adj_matrix[industries] / adj_matrix['state'].apply(lambda state: n_clients.loc[state])
-
-    adj_matrix_intersection = adj_matrix.replace(0, np.nan)
-    adj_matrix_union = adj_matrix.replace(np.nan, 0)
-
-    ###############################
-    # Create scatterplots
-    ###############################
-    if do_scatterplots:
-        fig, axes = plt.subplots(2, 1, figsize=(3, 6), sharex=True, sharey=True)
-
-        axes = axes.flat
-
-        kwargs = dict(
-            x='IDEOLOGY/SINGLE ISSUE_PRO-ENVIRONMENTAL POLICY',
-            y='ENERGY & NATURAL RESOURCES_ELECTRIC UTILITIES',
-            s=7,
-            alpha=1,
-        )
-
-        passed_colors = {True: 'k', False: 'grey'}
-        passed_lws = {True: 1, False: 0}
-
-        vlines_kwargs = [0, -1, 1, 'grey', ':']
-
-        label_adjust = lambda c: c.replace('&', '\&').split('_')[-1].title()
-
-        def annotate_stats(ax, *dfs):
-
-            dy = 0
-            labels = ['u', 'i', 's']
-            for df, label in zip(dfs, labels):
-                df_copy = df[[kwargs['x'], kwargs['y']]]
-                df_copy = df_copy[abs(df_copy).sum(1) > 0]
-
-                # Annotate the axis with the pearson correlation
-                r = df_copy.corr(numeric_only=True).loc[kwargs['x'], kwargs['y']]
-                p = df_copy.corr(numeric_only=True, method=lambda x, y: pearsonr(x, y)[1]).loc[kwargs['x'], kwargs['y']]
-                slope = df_copy.corr(numeric_only=True, method=lambda x, y: linregress(x, y)[0]).loc[
-                    kwargs['x'], kwargs['y']]
-                n = len(df_copy.dropna(axis=0))
-                ax.annotate(r"$r_{% s} = %.2f$" % (label, r), [1.2, 1 - dy], transform=ax.transData, annotation_clip=False)
-                ax.annotate(r"$\beta_{% s} = %.2f$" % (label, slope), [1.2, 0.8 - dy], transform=ax.transData,
-                            annotation_clip=False)
-                ax.annotate(r"$p_{% s} = %.3f$" % (label, p), [1.2, 0.6 - dy], transform=ax.transData,
-                            annotation_clip=False)
-                ax.annotate(r"$N_{% s} = %i$" % (label, n), [1.2, 0.4 - dy], transform=ax.transData, annotation_clip=False)
-
-                dy += 1
-
-        def plot_bill_scatter(condition: pd.Series, title: str, ax: plt.Axes):
-
-            # Make sure condition index aligns with adj_matrix index
-            condition = condition.reindex(adj_matrix.index).fillna(False)
-
-            df_union = adj_matrix_union[condition]
-            df_intersection = adj_matrix_intersection[condition]
-
-            def _plot_bill_scatter_df(df, ax, c):
-                ax.scatter(df[kwargs['x']], df[kwargs['y']],
-                           s=kwargs['s'],
-                           alpha=kwargs['alpha'],
-                           c=df.passed.map(passed_colors),
-                           linewidth=df.passed.map(passed_lws)
-                           )
-
-            _plot_bill_scatter_df(df_union, ax, 'grey')
-
-            ax.set_ylabel(label_adjust(kwargs['y']))
-            ax.set_title(title)
-            ax.vlines(*vlines_kwargs, zorder=-100)
-            ax.hlines(*vlines_kwargs, zorder=-100)
-            annotate_stats(ax, df_union, df_intersection)
-
-        condition = (topics_dummies['Renewable Energy Solar'] == 1)
-        title = 'Solar'
-        plot_bill_scatter(condition, title, axes[0])
-
-        condition = (topics_dummies['Renewable Energy Wind'] == 1)
-        title = 'Wind'
-        plot_bill_scatter(condition, title, axes[1])
-
-        axes[0].set_xlim(-1.1, 1.1)
-        axes[0].set_ylim(-1.1, 1.1)
-
-        axes[-1].set_xlabel(label_adjust(kwargs['x']))
-
-        markers = [mpl.lines.Line2D([0], [0], ms=kwargs['s'] ** 0.5, mfc=passed_colors[False],
-                                    marker='o', linewidth=0, mec='none', mew=passed_lws[False]),
-                   mpl.lines.Line2D([0], [0], ms=kwargs['s'] ** 0.5, mfc=passed_colors[True],
-                                    marker='o', linewidth=0, mec='none', mew=passed_lws[True])]
-        axes[0].legend(markers, ['Failed', 'Passed'])
-
-        fig.savefig('figures/figure_2.pdf', bbox_inches='tight')
-        fig.savefig('figures/figure_2.png', bbox_inches='tight', dpi=300)
-        plt.show()
-
-    ###############################
-    # Create correlation charts
-    ###############################
-    if do_correlations:
-        selected_topics = [
-            'Renewable Energy Wind',
-            'Renewable Energy Solar',
-            'Fossil Energy Coal',
-            'Fossil Energy Natural Gas',
-            'Nuclear Energy Facilities',
-            'Energy Efficiency',
-            'Emissions'
-        ]
-
-        n_comparisons = len(comparison_industries)
-
-        def get_correlations(adj_matrix):
-            correlations = defaultdict(dict)
+            topic_comparison_y = 0  # y position of the comparison within the topic
 
             for comparison in comparison_industries:
+                pearson_r_obj = correlations[topic][comparison]
 
-                selected_industries = [comparison,
-                                       'IDEOLOGY/SINGLE ISSUE_PRO-ENVIRONMENTAL POLICY']
+                if pearson_r_obj is not None:
+                    # Plot the correlation with 95% confidence interval
+                    y = topic_y + topic_comparison_y
+                    xerr = abs(
+                        np.array([*pearson_r_obj.confidence_interval(0.95)]) - pearson_r_obj.statistic).T.reshape(
+                        (2, 1))
+                    ax.errorbar([pearson_r_obj.statistic], [y], yerr=None, xerr=xerr, marker='o', lw=2,
+                                color=comparison_colors[comparison])
 
-                for topic in selected_topics:
+                    # Plot the correlation with 99% confidence interval, thinner
+                    xerr = abs(
+                        np.array([*pearson_r_obj.confidence_interval(0.99)]) - pearson_r_obj.statistic).T.reshape(
+                        (2, 1))
+                    ax.errorbar([pearson_r_obj.statistic], [y], yerr=None, xerr=xerr, marker='o', lw=1,
+                                color=comparison_colors[comparison])
 
-                    df = adj_matrix[(topics_dummies.reindex(adj_matrix.index)[topic] == 1)][selected_industries]
+                topic_comparison_y += 0.8 / n_comparisons
 
-                    if df.notna().min(1).sum() < 2:
-                        correlations[topic][comparison] = None
-                    else:
-                        df = df.dropna(axis=0)
-                        correlations[topic][comparison] = pearsonr(df[selected_industries].values[:, 0],
-                                                                   df[selected_industries].values[:, 1])
+            topic_y += 1
 
-            return correlations
+        ax.set_yticks(np.arange(topic_y) + 0.4)
+        ax.set_yticklabels(correlations)
 
-        union_correlations = get_correlations(adj_matrix_union)
-        intersection_correlations = get_correlations(adj_matrix_intersection)
+        ylim = ax.get_ylim()
+        xlim = ax.get_xlim()
 
-        fig, axes = plt.subplots(1, 2, figsize=(8, 11), sharex=True, sharey=True)
+        for y in np.arange(topic_y):
+            for v in (y + np.linspace(0, 0.8 * (1 - 1 / n_comparisons), n_comparisons)):
+                ax.hlines(v, -10, 10, lw=0.5, color='grey', zorder=-1, alpha=0.5, linestyle='--')
 
-        # Map each comparison to a color
-        # use a color palette with at least 10 colors
-        palette = sns.color_palette('tab10', n_colors=len(comparison_industries))
-        comparison_colors = dict(zip(comparison_industries, palette))
+        ax.vlines(0, -1, topic_y + 1, 'k', zorder=-1, lw=0.5)
+        ax.set_ylim(*ylim)
+        ax.set_xlim(*xlim)
 
-        def plot_correlations(correlations, ax):
-            """
-            Plot the correlations
-            :param correlations: dict of dicts of correlations
-            :param ax: axis to plot on
-            :return: ax
-            """
+        return ax
 
-            topic_y = 0 # y position of the topic
-            for topic in correlations:
+    ax = plot_correlations(union_correlations, axes[0])
+    ax.set_xlabel('Correlation coefficient - union')
+    ax.set_ylabel('Topic')
 
-                topic_comparison_y = 0 # y position of the comparison within the topic
+    ax = plot_correlations(intersection_correlations, axes[1])
+    ax.set_xlabel('Correlation coefficient - intersection')
+    ax.set_xlim(-1.1, 1.1)
 
-                for comparison in comparison_industries:
-                    pearson_r_obj = correlations[topic][comparison]
+    # Add legend showing colors
+    markers = [mpl.lines.Line2D([0], [0],
+                                mfc=comparison_colors[comparison],
+                                color=comparison_colors[comparison],
+                                marker='o', linewidth=1, mec='none', mew=0)
+               for comparison in comparison_industries]
+    labels = [adjust_label(comparison) for comparison in comparison_industries]
 
-                    if pearson_r_obj is not None:
-                        # Plot the correlation with 95% confidence interval
-                        y = topic_y + topic_comparison_y
-                        xerr = abs(np.array([*pearson_r_obj.confidence_interval(0.95)]) - pearson_r_obj.statistic).T.reshape(
-                            (2, 1))
-                        ax.errorbar([pearson_r_obj.statistic], [y], yerr=None, xerr=xerr, marker='o', lw=2,
-                                    color=comparison_colors[comparison])
+    markers = markers[::-1]
+    labels = labels[::-1]
+    # Add legend showing confidence intervals with a short line
+    conf_line_kwargs = dict(color='k', marker='none', mec='none', mew=0)
+    markers += [mpl.lines.Line2D([0, 5], [0, 0], **conf_line_kwargs, linewidth=2),
+                mpl.lines.Line2D([0, 5], [0, 0], **conf_line_kwargs, linewidth=1),]
+    labels += ['95% confidence interval', '99% confidence interval']
 
-                        # Plot the correlation with 99% confidence interval, thinner
-                        xerr = abs(np.array([*pearson_r_obj.confidence_interval(0.99)]) - pearson_r_obj.statistic).T.reshape(
-                            (2, 1))
-                        ax.errorbar([pearson_r_obj.statistic], [y], yerr=None, xerr=xerr, marker='o', lw=1,
-                                    color=comparison_colors[comparison])
+    axes[1].legend(markers, labels, bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0., frameon=False,
+                   fontsize=12, handlelength=0.5, handletextpad=0.5, labelspacing=0.5, title='Comparison industry')
 
-                    topic_comparison_y += 0.8 / n_comparisons
+    fig.savefig('figures/figure_3.pdf', bbox_inches='tight')
+    fig.savefig('figures/figure_3.png', bbox_inches='tight', dpi=300)
+    plt.show()
 
-                topic_y += 1
 
-            ax.set_yticks(np.arange(topic_y) + 0.4)
-            ax.set_yticklabels(correlations)
+def plot_topic_correlation_scatter(
+        adj_matrix: pd.DataFrame,
+        adj_matrix_union: pd.DataFrame,
+        adj_matrix_intersection: pd.DataFrame,
+        topics_dummies: pd.DataFrame):
+    """
+    Plots a scatter plot of the correlation between the pro-environmental policy and electric utilities positions
+    on solar and wind energy bills.
+    :param adj_matrix:
+    :param adj_matrix_union:
+    :param adj_matrix_intersection:
+    :param topics_dummies:
+    :return:
+    """
+    fig, axes = plt.subplots(2, 1, figsize=(3, 6), sharex=True, sharey=True)
+    axes = axes.flat
+    kwargs = dict(
+        x='IDEOLOGY/SINGLE ISSUE_PRO-ENVIRONMENTAL POLICY',
+        y='ENERGY & NATURAL RESOURCES_ELECTRIC UTILITIES',
+        s=7,
+        alpha=1,
+    )
+    passed_colors = {True: 'k', False: 'grey'}
+    passed_lws = {True: 1, False: 0}
+    vlines_kwargs = [0, -1, 1, 'grey', ':']
+    label_adjust = lambda c: c.replace('&', '\&').split('_')[-1].title()
 
-            ylim = ax.get_ylim()
-            xlim = ax.get_xlim()
+    def annotate_stats(ax, *dfs):
+        dy = 0
+        labels = ['u', 'i', 's']
+        for df, label in zip(dfs, labels):
+            df_copy = df[[kwargs['x'], kwargs['y']]]
+            df_copy = df_copy[abs(df_copy).sum(1) > 0]
 
-            for y in np.arange(topic_y):
-                for v in (y + np.linspace(0, 0.8 * (1 - 1 / n_comparisons), n_comparisons)):
-                    ax.hlines(v, -10, 10, lw=0.5, color='grey', zorder=-1, alpha=0.5, linestyle='--')
+            # Annotate the axis with the linear regression and correlation coefficient.
+            r = df_copy.corr(numeric_only=True).loc[kwargs['x'], kwargs['y']]
+            p = df_copy.corr(numeric_only=True, method=lambda x, y: pearsonr(x, y)[1]).loc[kwargs['x'], kwargs['y']]
+            slope = df_copy.corr(numeric_only=True, method=lambda x, y: linregress(x, y)[0]).loc[
+                kwargs['x'], kwargs['y']]
+            n = len(df_copy.dropna(axis=0))
+            ax.annotate(r"$r_{% s} = %.2f$" % (label, r), [1.2, 1 - dy], transform=ax.transData, annotation_clip=False)
+            ax.annotate(r"$\beta_{% s} = %.2f$" % (label, slope), [1.2, 0.8 - dy], transform=ax.transData,
+                        annotation_clip=False)
+            ax.annotate(r"$p_{% s} = %.3f$" % (label, p), [1.2, 0.6 - dy], transform=ax.transData,
+                        annotation_clip=False)
+            ax.annotate(r"$N_{% s} = %i$" % (label, n), [1.2, 0.4 - dy], transform=ax.transData, annotation_clip=False)
 
-            ax.vlines(0, -1, topic_y + 1, 'k', zorder=-1, lw=0.5)
-            ax.set_ylim(*ylim)
-            ax.set_xlim(*xlim)
+            dy += 1
 
-            return ax
+    def plot_bill_scatter(condition: pd.Series, title: str, ax: plt.Axes):
+        """
+        Plots a scatter plot of the correlation between the pro-environmental policy and electric utilities positions
+        :param condition:
+        :param title:
+        :param ax:
+        :return:
+        """
+        # Make sure condition index aligns with adj_matrix index
+        condition = condition.reindex(adj_matrix.index).fillna(False)
 
-        ax = plot_correlations(union_correlations, axes[0])
-        ax.set_xlabel('Correlation coefficient - union')
-        ax.set_ylabel('Topic')
+        df_union = adj_matrix_union[condition]
+        df_intersection = adj_matrix_intersection[condition]
 
-        ax = plot_correlations(intersection_correlations, axes[1])
-        ax.set_xlabel('Correlation coefficient - intersection')
-        ax.set_ylabel('Topic')
+        def _plot_bill_scatter_df(df, ax, c):
+            ax.scatter(df[kwargs['x']], df[kwargs['y']],
+                       s=kwargs['s'],
+                       alpha=kwargs['alpha'],
+                       c=df.passed.map(passed_colors),
+                       linewidth=df.passed.map(passed_lws)
+                       )
 
-        ax.set_xlim(-1.1, 1.1)
+        _plot_bill_scatter_df(df_union, ax, 'grey')
 
-        # Add legend
-        markers = [mpl.lines.Line2D([0], [0],
-                                    mfc=comparison_colors[comparison],
-                                    color = comparison_colors[comparison],
-                                    marker='o', linewidth=1, mec='none', mew=0)
-                    for comparison in comparison_industries]
+        ax.set_ylabel(label_adjust(kwargs['y']))
+        ax.set_title(title)
+        ax.vlines(*vlines_kwargs, zorder=-100)
+        ax.hlines(*vlines_kwargs, zorder=-100)
+        annotate_stats(ax, df_union, df_intersection)
 
-        labels = [adjust_label(comparison) for comparison in comparison_industries]
-        ax.legend(markers[::-1], labels[::-1], bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
+    condition = (topics_dummies['Renewable Energy Solar'] == 1)
+    title = 'Solar'
+    plot_bill_scatter(condition, title, axes[0])
 
-        fig.savefig('figures/figure_3.pdf', bbox_inches='tight')
-        fig.savefig('figures/figure_3.png', bbox_inches='tight', dpi=300)
-        plt.show()
+    condition = (topics_dummies['Renewable Energy Wind'] == 1)
+    title = 'Wind'
+    plot_bill_scatter(condition, title, axes[1])
 
+    axes[0].set_xlim(-1.1, 1.1)
+    axes[0].set_ylim(-1.1, 1.1)
+    axes[-1].set_xlabel(label_adjust(kwargs['x']))
+    markers = [mpl.lines.Line2D([0], [0], ms=kwargs['s'] ** 0.5, mfc=passed_colors[False],
+                                marker='o', linewidth=0, mec='none', mew=passed_lws[False]),
+               mpl.lines.Line2D([0], [0], ms=kwargs['s'] ** 0.5, mfc=passed_colors[True],
+                                marker='o', linewidth=0, mec='none', mew=passed_lws[True])]
+    axes[0].legend(markers, ['Failed', 'Passed'])
+    fig.savefig('figures/figure_2.pdf', bbox_inches='tight')
+    fig.savefig('figures/figure_2.png', bbox_inches='tight', dpi=300)
+    plt.show()
 
 def plot_agree_probabilities(agree_probabilities, disagree_probabilities):
     """
@@ -570,7 +440,61 @@ def plot_partisanship_figure(plotdata):
     plt.show()
 
 
-def plot_probability_utilities_oppose():
-    pass
+def plot_utilities_p_disagree_robustness_check(data, histdata):
+    fig, (ax, ax2) = plt.subplots(1, 2, figsize=(6, 4), width_ratios=[3, 1], sharey=True)
+    sns.boxplot(histdata, y='state', x='alignment', order=data.state.drop_duplicates(), ax=ax)
+    ax.plot(data.alignment, data.state, marker='o', lw=0, mfc='w', mec='grey')
+    ax.set_xlim(0, 0.23)
+    ax.set_xticklabels([round(i * 100, 1) for i in ax.get_xticks()])
+    ax.set_xlabel("P(disagree)")
+    ax.hlines(6.5, 0, .23, 'k', ':')
+    ax.set_xlim(0, 0.23)
+    ax.text(0.15, "CO", "Regulated", verticalalignment='bottom')
+    ax.text(0.15, "MA", "Deregulated", verticalalignment='top')
+    ax2.barh(width=data.alignment - data.expected, y=data.state, edgecolor='k', color='grey', height=0.5)
+    ax2.vlines(data[data.deregulated].alignment.mean() - data[data.deregulated].expected.mean(), 7, 11, 'r', '--')
+    ax2.vlines(data[~data.deregulated].alignment.mean() - data[~data.deregulated].expected.mean(), 0, 6, 'r', '--')
+    ax2.hlines(6.5, 0, .13, 'k', ':')
+    ax2.set_xticklabels([round(i * 100, 1) for i in ax2.get_xticks()])
+    ax2.set_xlabel("observed - expected")
+    fig.suptitle(
+        "Probability of electric utilities opposing environmenal nonprofits:\n" +
+        "configuration model versus observed\n", )
+    fig.savefig("figures/figure_1_appendix.pdf", bbox_inches='tight')
+    fig.savefig("figures/figure_1_appendix.png", dpi=300, bbox_inches='tight')
 
 
+def plot_utilities_p_disagree_main(data):
+    fig, ax4 = plt.subplots(1, 1, figsize=(3, 3))
+    sns.swarmplot(
+        data,
+        x='deregulated',
+        y='alignment',
+        edgecolor='none',
+        color='none',
+        size=1,
+        ax=ax4,
+        legend=False)
+    annotations = [
+        ax4.annotate(
+            state, [dereg, alignment],
+            verticalalignment='center',
+            horizontalalignment='center')
+        for state, alignment, dereg in data[['state', 'alignment', 'deregulated']].values
+    ]
+    ax4.set_ylabel("P(Disagree) (\%)")
+    ax4.set_yticklabels([round(i * 100, 1) for i in ax4.get_yticks()])
+    ax4.set_xlabel("")
+    ax4.set_xticklabels(['Regulated', 'Deregulated'])
+    ax4.yaxis.tick_right()
+    ax4.yaxis.set_label_position("right")
+    ax4.set_title("Electric Utilities and\nPro-Environmental Policy", fontsize=10)
+    adjust_text(annotations, autoalign=False, ax=ax4, only_move={'text': 'x', 'points': 'x', 'objects': 'x'})
+    xlim = ax4.get_xlim()
+    for a in annotations:
+        x, y = a.get_position()
+        ax4.plot(x, y, marker='o', mfc='grey', mec='none', lw=0, alpha=0.3, zorder=-1, ms=17)
+    ax4.set_xlim(*xlim)
+    ax4.set_ylim(0, ax4.get_ylim()[1] + 0.02)
+    fig.savefig("figures/figure_6.png", dpi=300, bbox_inches='tight')
+    fig.savefig("figures/figure_6.pdf", bbox_inches='tight')

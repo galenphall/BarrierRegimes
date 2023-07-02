@@ -1,11 +1,9 @@
 import os
 
 import pandas as pd
-from adjustText import adjust_text
-from matplotlib import pyplot as plt
 from tqdm import tqdm
-import seaborn as sns
 
+from figures import plot_utilities_p_disagree_robustness_check, plot_utilities_p_disagree_main
 from utils import ConfigurationModel, get_expected_agreements, get_bipartite_adjacency_matrix_kcore
 
 energy_relevant_topics = {
@@ -47,6 +45,9 @@ def filter_topics(row):
 def main():
 
     from main import positions, bills, client_uuid_to_ftm_industry, deregulated
+
+    # ensure the working directory is the root of the project
+    os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
     power_generation_bills = bills[bills.apply(filter_topics, 1)].bill_identifier.unique()
 
@@ -98,8 +99,10 @@ def main():
         return config_disagreements
 
     if not os.path.exists('data/configuration_model_utility_disagreements.parquet'):
+        print("Generating null model disagreements")
         config_disagreements = generate_null_model_disagreements(power_generation_bills)
     else:
+        print("Loading null model disagreements")
         config_disagreements = pd.read_parquet('data/configuration_model_utility_disagreements.parquet')
 
     # Calculate the actual observed probability of disagreement for each state.
@@ -118,76 +121,8 @@ def main():
 
     histdata = config_disagreements.T.stack().reset_index().iloc[:,[0,2]].rename(columns={'level_0':'state',0:'alignment'})
 
-    fig, (ax, ax2) = plt.subplots(1, 2, figsize=(6, 4), width_ratios=[3, 1], sharey=True)
+    plot_utilities_p_disagree_robustness_check(data, histdata)
 
-    sns.boxplot(histdata, y='state', x='alignment', order=data.state.drop_duplicates(), ax=ax)
+    plot_utilities_p_disagree_main(data)
 
-    ax.plot(data.alignment, data.state, marker='o', lw=0, mfc='w', mec='grey')
-    ax.set_xlim(0, 0.23)
-    ax.set_xticklabels([round(i*100,1) for i in ax.get_xticks()])
-    ax.set_xlabel("P(disagree)")
-    ax.hlines(6.5, 0, .23, 'k', ':')
-    ax.set_xlim(0, 0.23)
-
-    ax.text(0.15, "CO", "Regulated", verticalalignment='bottom')
-    ax.text(0.15, "MA", "Deregulated", verticalalignment='top')
-
-    ax2.barh(width=data.alignment-data.expected, y=data.state, edgecolor='k', color ='grey', height=0.5)
-    ax2.vlines(data[data.deregulated].alignment.mean() - data[data.deregulated].expected.mean(), 7,11, 'r', '--')
-    ax2.vlines(data[~data.deregulated].alignment.mean() - data[~data.deregulated].expected.mean(), 0,6, 'r', '--')
-    ax2.hlines(6.5, 0, .13, 'k', ':')
-    ax2.set_xticklabels([round(i*100,1) for i in ax2.get_xticks()])
-    ax2.set_xlabel("observed - expected")
-
-    fig.suptitle(
-        "Probability of electric utilities opposing environmenal nonprofits:\n"+
-        "configuration model versus observed\n", )
-
-    fig.savefig("figures/figure_1_appendix.pdf", bbox_inches='tight')
-    fig.savefig("figures/figure_1_appendix.png", dpi=300, bbox_inches='tight')
-
-    #########################################
-    # Figure 6b
-    #########################################
-
-    fig, ax4 = plt.subplots(1, 1, figsize=(3, 3))
-
-    sns.swarmplot(
-        data,
-        x='deregulated',
-        y='alignment',
-        edgecolor='none',
-        color='none',
-        size=1,
-        ax=ax4,
-        legend=False)
-
-    annotations = [
-        ax4.annotate(
-            state, [dereg, alignment],
-            verticalalignment='center',
-            horizontalalignment='center')
-        for state, alignment, dereg in data[['state', 'alignment', 'deregulated']].values
-    ]
-
-    ax4.set_ylabel("P(Disagree) (\%)")
-    ax4.set_yticklabels([round(i*100,1) for i in ax4.get_yticks()])
-    ax4.set_xlabel("")
-    ax4.set_xticklabels(['Regulated', 'Deregulated'])
-    ax4.yaxis.tick_right()
-    ax4.yaxis.set_label_position("right")
-    ax4.set_title("Electric Utilities and\nPro-Environmental Policy", fontsize=10)
-
-    adjust_text(annotations, autoalign=False, ax=ax4, only_move={'text': 'x', 'points': 'x', 'objects': 'x'})
-
-    xlim = ax4.get_xlim()
-    for a in annotations:
-        x, y = a.get_position()
-        ax4.plot(x, y, marker='o', mfc='grey', mec='none', lw=0, alpha=0.3, zorder=-1, ms=17)
-    ax4.set_xlim(*xlim)
-
-    ax4.set_ylim(0, ax4.get_ylim()[1] + 0.02)
-
-    fig.savefig("figures/figure_6.png", dpi=300, bbox_inches='tight')
-    fig.savefig("figures/figure_6.pdf", bbox_inches='tight')
 

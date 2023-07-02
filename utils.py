@@ -5,53 +5,12 @@ import sparse
 from matplotlib import pyplot as plt
 
 
-def oneway_propensity(A_b, allowed=[1]):
-    """
-  Calculate the oneway propensity of a given bill matrix A_b.
-
-  Parameters:
-  A_b (pd.DataFrame): A matrix representing the support/opposition of legislators for a given bill.
-
-  Returns:
-  oneway_propensity (pd.DataFrame): A matrix representing the oneway propensity between the legislators.
-  """
-
-    A_b_in = A_b.copy()
-
-    # Replace NaN values with 0
-    A_b = A_b.replace(np.nan, 0)
-
-    # Calculate the pairwise net agreement
-    a = sparse.COO(A_b.values)
-    b = sparse.COO(A_b.values[:, None])
-    c = a * b
-    d = c.copy() * 0
-    for k in allowed:
-        d += c * (c == k)
-
-    pairwise_net_agreement = pd.DataFrame(d.sum(axis=2).todense(),
-                                          index=A_b.index.copy(),
-                                          columns=A_b.index.copy())
-
-    # Helper function to calculate the number of unique bills for a legislator
-    def set_length(u):
-        return len(u.dropna())
-
-    # Calculate the pairwise unique bills
-    oneway_unique_bills = A_b_in.replace(0, np.nan).apply(set_length, axis=1)
-
-    # Calculate pairwise propensity
-    propensity = pairwise_net_agreement.div(oneway_unique_bills, axis=0)
-
-    return propensity, oneway_unique_bills
-
-
-def get_bipartite_adjacency_matrix_kcore(positions, k_core=(5, 2)):
+def get_bipartite_adjacency_matrix_kcore(positions: pd.DataFrame, k_core: tuple=(5, 2)):
     """
     Construct the adjacency matrix adj_matrix from the positions dataframe; adj_matrix is a pandas dataframe
-    :param positions (pandas dataframe): the positions dataframe
-    :param k_core (tuple): the minimum number of clients and bills for the k-core
-    :return adj_matrix (pandas dataframe): the adjacency matrix
+    :param positions: [pd.DataFrame] the positions dataframe
+    :param k_core: [tuple] the minimum number of clients and bills for the k-core
+    :return adj_matrix: [pd.DataFrame] the adjacency matrix
     """
 
     # Keep only rows with a client_uuid and a bill_identifier and a position_numeric in [-1, 1]
@@ -96,30 +55,6 @@ def get_bipartite_adjacency_matrix_kcore(positions, k_core=(5, 2)):
                                     columns=sorted(c & {*adj_matrix.columns.values}))
 
     return adj_matrix
-
-
-def grouped_oneway_alignment_matrix(positions, k_core, allowed_positions, groups):
-    adj_matrix = get_bipartite_adjacency_matrix_kcore(positions, k_core)
-
-    if adj_matrix is None:
-        return None
-
-    adj_matrix, uniqbills = oneway_propensity(adj_matrix, allowed_positions)
-    adj_matrix.index = adj_matrix.index.copy()
-    adj_matrix.columns = adj_matrix.columns.copy()
-    adj_matrix.index.name = 'u'
-    adj_matrix.columns.name = 'v'
-    E = adj_matrix.stack().dropna().reset_index().rename(columns={0: 'alignment'})
-    E['uniqbills'] = E.u.map(uniqbills)
-    E['u_cli'] = E.u.map(lambda x: x.split("_")[0])
-    E['v_cli'] = E.v.map(lambda x: x.split("_")[0])
-
-    # group-to-group
-    group_to_group_adj_matrix = E.groupby([E.u_cli.map(groups), E.v_cli.map(groups)]).apply(
-        lambda data: (data.alignment * data.uniqbills).sum() / data.uniqbills.sum()
-    ).unstack()
-
-    return group_to_group_adj_matrix
 
 
 def adjust_label(label):
@@ -176,17 +111,21 @@ def get_expected_agreements(
     the total number of bills that the source industry_id has a position on, and then divide by the total number of
     interest groups in the industry_id of interest:
 
-        E[agreement] = (1 / |S|) * (1 / |I|) * sum_{i in S} sum_{j in I} A_{i, j, b}
+        k   = total number of bills that the source industry_id S has a position on
+            = sum_{i in S} (sum_{j} B[i, j]) > 0
+        |I| = total number of interest groups in the industry_id of interest
+
+        E[agreement] = (1 / k) * (1 / |I|) * sum_{i in S} sum_{j in I} A_{i, j, b}
 
     To calculate the expected disagreement between the source industry_id and the industry_id of interest, we follow the
     same procedure, but sum over the first two indices of A wherever A is equal to -1:
 
-        E[disagreement] = (1 / |S|) * (1 / |I|) * sum_{i in S} sum_{j in I} A_{i, j, b} * \delta_{A_{i, j, b}, -1}
+        E[disagreement] = (1 / k) * (1 / |I|) * sum_{i in S} sum_{j in I} A_{i, j, b} * \delta_{A_{i, j, b}, -1}
 
     And finally, to calculate the expected net agreement between the source industry_id and the industry_id of interest,
     we follow the same procedure, but sum over the first two indices of A wherever A is equal to 1 or -1:
 
-        E[net agreement] = (1 / |S|) * (1 / |I|) * sum_{i in S} sum_{j in I} A_{i, j, b} * \delta_{A_{i, j, b}, 1 or -1}
+        E[net agreement] = (1 / k) * (1 / |I|) * sum_{i in S} sum_{j in I} A_{i, j, b} * \delta_{A_{i, j, b}, 1 or -1}
 
     :param adj_matrix: the adjacency matrix
     :param ftm_industries: a pandas dataframe with the industry_id names
@@ -226,21 +165,26 @@ def get_expected_agreements(
     data['source'] = data[0].map(idx_to_client)
     data['target'] = data[1].map(idx_to_client)
     data['bill'] = data[2].map(idx_to_bill)
+    data['position_product'] = data[3]
     data['source_ftm'] = data.source.map(ftm_industries)
     data['target_ftm'] = data.target.map(ftm_industries)
+    data = data.drop([0, 1, 2, 3], axis=1)
 
     source_num_positions = abs(adj_matrix[adj_matrix.index.map(ftm_industries) == source_industry]).sum().sum()
 
     data = data[data.source != data.target]
 
     summed_relations = data[data.source_ftm == source_industry].groupby(['source', 'bill', 'target_ftm'])[
-        3].sum().unstack().replace(np.nan, 0).sum()
+        'position_product'].sum().unstack().replace(np.nan, 0).sum()
+
+    summed_relations = data[data.source_ftm == source_industry].groupby(['target_ftm'])['position_product'].sum()
 
     industry_counts = data.drop_duplicates('target').target_ftm.value_counts()
 
     normalized_summed_positions = (summed_relations / source_num_positions / industry_counts).dropna()
 
     return normalized_summed_positions.sort_values()
+
 
 class ConfigurationModel:
     """
@@ -250,53 +194,97 @@ class ConfigurationModel:
     their applications. Physical Review E, 64(2), 026118. https://doi.org/10.1103/PhysRevE.64.026118
     """
 
+    @staticmethod
     def from_positions(positions):
-        edges = positions[positions.position_numeric.isin([1,-1])].drop_duplicates(['client_uuid', 'bill_identifier'])[['client_uuid', 'bill_identifier', 'position_numeric']]
+        """
+        Create a configuration model from a pandas dataframe of positions.
+        :param positions: a pandas dataframe with columns 'client_uuid', 'bill_identifier', and 'position_numeric'
+        :return: a ConfigurationModel
+        """
+        edges = positions[positions.position_numeric.isin([1, -1])].drop_duplicates(
+            ['client_uuid', 'bill_identifier']
+        )[['client_uuid', 'bill_identifier', 'position_numeric']]
         configmodel = ConfigurationModel(edges.values)
         configmodel.positions = positions
         return configmodel
 
     def __init__(self, edges):
+        """
+        Create a configuration model from a list of edges. The configuration model will have the same degree sequence
+        as the given list of edges, for both the client_uuid and bill_identifier nodes, and for both the positive and
+        negative edges, separately. We do this by creating a stub list for each node, and then randomly rewiring the
+        stubs.
+        :param edges: a list of edges, where each edge is a tuple of the form (client_uuid, bill_identifier, position_numeric)
+        """
         self.edges = edges
+        #
         self.ig_stubs = pd.DataFrame([[ig, pos] for ig, bill, pos in edges])
         self.bill_stubs = pd.DataFrame([[bill, pos] for ig, bill, pos in edges])
         self.blocks = {}
 
     def sample(self, position=None):
+        """
+        Sample a random bipartite graph from the configuration model.
+        :param position: if None, sample a random bipartite graph. If 1 or -1, sample a random bipartite graph with the
+            given position.
+        :return:
+        """
 
+        # Randomly shuffle the stubs
         if position is None:
             i = self.ig_stubs.sample(len(self.ig_stubs), replace=False).reset_index(drop=True)
             b = self.bill_stubs.sample(len(self.bill_stubs), replace=False).reset_index(drop=True)
-        elif position in [-1,1]:
-            i = self.ig_stubs[self.ig_stubs[1]==position].sample(len(self.ig_stubs[self.ig_stubs[1]==position]), replace=False).reset_index(drop=True)
-            b = self.bill_stubs[self.bill_stubs[1]==position].sample(len(self.bill_stubs[self.bill_stubs[1]==position]), replace=False).reset_index(drop=True)
+        elif position in [-1, 1]:
+            # If a position is given, sample only from the stubs with that position
+            i = self.ig_stubs[self.ig_stubs[1] == position].sample(len(self.ig_stubs[self.ig_stubs[1] == position]),
+                                                                   replace=False).reset_index(drop=True)
+            b = self.bill_stubs[self.bill_stubs[1] == position].sample(
+                len(self.bill_stubs[self.bill_stubs[1] == position]), replace=False).reset_index(drop=True)
         else:
             raise ValueError(f"position is {position}, but must be either None, 1, or -1.")
 
+        # Separate the stubs corresponding to positive and negative edges, because a negative stub cannot
+        # be connected to a positive stub
         i_pos = i[i[1] == 1]
         b_pos = b[b[1] == 1]
         i_neg = i[i[1] == -1]
         b_neg = b[b[1] == -1]
 
-        positive_edges = pd.concat([i_pos, b_pos], axis=1).iloc[:,:3]
-        negative_edges = pd.concat([i_neg, b_neg], axis=1).iloc[:,:3]
+        # Align the shuffled bill and interest group stubs of each position type
+        positive_edges = pd.concat([i_pos, b_pos], axis=1).iloc[:, :3]
+        negative_edges = pd.concat([i_neg, b_neg], axis=1).iloc[:, :3]
 
+        # Recombine the positive and negative edges into a single dataframe
         edges = pd.concat([positive_edges, negative_edges])
-
         edges.columns = ['client_uuid', 'position_numeric', 'bill_identifier']
         edges['client_block'] = edges.client_uuid.map(self.blocks)
         edges['bill_block'] = edges.bill_identifier.map(self.blocks)
 
         return edges
 
-    def baseline(self, position=None):
-        edges = pd.DataFrame(self.edges, columns = ['client_uuid', 'bill_identifier', 'position_numeric'])
-        edges['client_block'] = edges.client_uuid.map(self.blocks)
-        edges['bill_block'] = edges.bill_identifier.map(self.blocks)
 
-        if position in [-1,1]:
-          edges = edges[edges.position_numeric==position]
-        elif position is not None:
-          raise ValueError(f"position is {position}, but must be either None, 1, or -1.")
+def process_ncsl(topic_name):
+    topics_split = topic_name.split(';')
+    return [
+        t.split('__')[-1].replace('_', ' ').title()
+        for t in topics_split if 'energy' in t]
 
-        return edges
+
+def extract_and_normalize_topics(ncsl, ael):
+    """
+    Extracts the normalized topics from the ncsl and ael columns.
+    :param ncsl: the ncsl_topics column value
+    :param ael: the ael_category column value
+    :return: a comma-separated string of normalized topics
+    """
+    topics_to_add = []
+    if isinstance(ael, str):
+        topics_to_add += [ael]
+    if isinstance(ncsl, str):
+        ncsl_topics = process_ncsl(ncsl)
+        for topic in ncsl_topics:
+            topics_to_add += [topic]
+
+    topics_to_add = set(topics_to_add)
+
+    return ','.join(topics_to_add)
