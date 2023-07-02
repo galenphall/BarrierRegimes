@@ -570,6 +570,7 @@ def plot_partisanship_figure(plotdata):
     plt.show()
 
 
-def plot_probability_utilities_oppose()
+def plot_probability_utilities_oppose():
+    pass
 
 

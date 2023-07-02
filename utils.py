@@ -192,7 +192,7 @@ def get_expected_agreements(
     :param ftm_industries: a pandas dataframe with the industry_id names
     :param relation: the type of agreement to calculate. Must be one of 'support', 'oppose', or 'net'
     :param source_industry: the industry_id to compare all other industry_ids to
-    :return: a pandas dataframe with the expected agreements between each industry_id and the source_industry
+    :return: a pandas Series with the expected agreements between each industry_id and the source_industry
     """
 
     assert relation in ['support', 'oppose', 'net'], "relation must be one of 'support', 'oppose', or 'net'"
