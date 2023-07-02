@@ -155,9 +155,6 @@ def get_expected_agreements(
     for k in allowed_positions:
         d += c * (c == k)
 
-    # 1. select an environmental group's position on a bill
-    # 2. count how many groups from industry_id X support/oppose that position
-    # 3. average this across all environmental groups' positions on bills
     idx_to_client = dict(zip(range(len(adj_matrix.index)), adj_matrix.index.values))
     idx_to_bill = dict(zip(range(len(adj_matrix.columns)), adj_matrix.columns.values))
 
@@ -170,18 +167,21 @@ def get_expected_agreements(
     data['target_ftm'] = data.target.map(ftm_industries)
     data = data.drop([0, 1, 2, 3], axis=1)
 
+    # Sum nonzero positions by source industry_id
     source_num_positions = abs(adj_matrix[adj_matrix.index.map(ftm_industries) == source_industry]).sum().sum()
 
+    # Remove self-loops
     data = data[data.source != data.target]
 
-    summed_relations = data[data.source_ftm == source_industry].groupby(['source', 'bill', 'target_ftm'])[
-        'position_product'].sum().unstack().replace(np.nan, 0).sum()
+    # Sum the position products by target industry_id
+    summed_position_product = data[data.source_ftm == source_industry].groupby(['target_ftm'])['position_product'].sum()
 
-    summed_relations = data[data.source_ftm == source_industry].groupby(['target_ftm'])['position_product'].sum()
-
+    # Count the number of interest groups in each industry_id
     industry_counts = data.drop_duplicates('target').target_ftm.value_counts()
 
-    normalized_summed_positions = (summed_relations / source_num_positions / industry_counts).dropna()
+    # Normalize by the number of bills that the source industry_id has a position on and the number of interest groups
+    # in the industry_id of interest
+    normalized_summed_positions = (summed_position_product / source_num_positions / industry_counts).dropna()
 
     return normalized_summed_positions.sort_values()
 
