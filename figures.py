@@ -338,8 +338,8 @@ def plot_agree_probabilities(agree_probabilities, disagree_probabilities):
     fig, axes = plt.subplots(2,1, figsize = (6.5,8), sharex=True)
 
     for table_data in [
-        agree_probabilities.reindex(most_friendly.index.values).round(2),
-        disagree_probabilities.reindex(most_unfriendly.index.values).round(2)
+        agree_probabilities.reindex(most_friendly.index.values),
+        disagree_probabilities.reindex(most_unfriendly.index.values)
         ]:
         ax = axes[flip_sign]
         table_data.index = table_data.index.map(adjust_label)
