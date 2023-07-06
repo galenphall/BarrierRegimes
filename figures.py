@@ -484,7 +484,7 @@ def plot_utilities_p_disagree_robustness_check(data, histdata):
     ax2.set_xticklabels([round(i * 100, 1) for i in ax2.get_xticks()])
     ax2.set_xlabel("observed - expected")
     fig.suptitle(
-        "Probability of electric utilities opposing environmenal nonprofits:\n" +
+        "Probability of electric utilities opposing environmental nonprofits:\n" +
         "configuration model versus observed\n", )
     fig.savefig("figures/figure_A1.pdf", bbox_inches='tight')
     fig.savefig("figures/figure_A1.png", dpi=300, bbox_inches='tight')

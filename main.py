@@ -12,6 +12,12 @@ bills = pd.read_parquet('data/climate_energy_bills.parquet')
 # Create mapping from client_uuid to FTM industry_id
 client_uuid_to_ftm_industry = clients.set_index('client_uuid').ftm.to_dict()
 
+# Ensure that positions are sorted by date
+positions = positions.sort_values('start_date')
+
+# Ensure that positions ftm_industry is same as client ftm
+positions['ftm_industry'] = positions.client_uuid.map(client_uuid_to_ftm_industry)
+
 # partisanship data from Boris Shor and Nolan McCarty, see https://dataverse.harvard.edu/dataverse/bshor
 partisanship = pd.read_table('data/statemetadata/shormccarty.tab')
 
@@ -56,13 +62,6 @@ if __name__ == '__main__':
     from scripts import bill_topic_correlations, most_active_industries, structural_factors, \
     electric_utilities_disagreements, environmental_industry_agree_probabilities
 
-    # Reload the modules to ensure that changes are reflected as we iterate
-    importlib.reload(bill_topic_correlations)
-    importlib.reload(most_active_industries)
-    importlib.reload(structural_factors)
-    importlib.reload(electric_utilities_disagreements)
-    importlib.reload(environmental_industry_agree_probabilities)
-
     top_industries = most_active_industries.main(True)
 
     comparison_industries = [top_industries[0], *top_industries[2:11]][::-1]
@@ -78,8 +77,8 @@ if __name__ == '__main__':
 
     bill_topic_correlations.main(comparison_industries, comparison_topics, True)
 
-    # environmental_industry_agree_probabilities.main()
-    #
-    # structural_factors.main()
-    #
-    # electric_utilities_disagreements.main()
+    environmental_industry_agree_probabilities.main()
+
+    structural_factors.main()
+
+    electric_utilities_disagreements.main()
