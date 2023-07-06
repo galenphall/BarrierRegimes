@@ -3,7 +3,7 @@ from collections import defaultdict
 import numpy as np
 from scipy.stats import pearsonr, spearmanr
 
-from figures import plot_topic_correlation_coefficients, plot_topic_correlation_scatter, \
+from figures import plot_topic_correlation_coefficients, plot_topic_correlation_scatter_main_text, \
     plot_industry_to_industry_topic_scatters
 from main import positions, bills, topics_dummies
 
@@ -117,7 +117,7 @@ def create_correlations(comparison_topics, comparison_industries, adj_matrix_int
     return union_correlations, intersection_correlations
 
 
-def main(comparison_industries, comparison_topics):
+def main(comparison_industries, comparison_topics, appendix_plot=True):
 
     adj_matrix, adj_matrix_union, adj_matrix_intersection = create_adjacency_matrices()
     union_correlations, intersection_correlations = create_correlations(
@@ -129,8 +129,9 @@ def main(comparison_industries, comparison_topics):
     bill_counts = topics_dummies[comparison_topics].sum()
     interest_group_counts = positions[positions.ftm_industry.isin(comparison_industries)].groupby('ftm_industry').client_uuid.nunique()
 
-    # plot_topic_correlation_coefficients(comparison_industries, intersection_correlations, union_correlations, bill_counts, interest_group_counts)
-    #
-    # plot_topic_correlation_scatter(adj_matrix, adj_matrix_union, adj_matrix_intersection, topics_dummies)
+    plot_topic_correlation_coefficients(comparison_industries, intersection_correlations, union_correlations, bill_counts, interest_group_counts)
 
-    plot_industry_to_industry_topic_scatters(adj_matrix, comparison_industries, comparison_topics, topics_dummies)
+    plot_topic_correlation_scatter_main_text(adj_matrix, adj_matrix_union, adj_matrix_intersection, topics_dummies)
+
+    if appendix_plot:
+        plot_industry_to_industry_topic_scatters(adj_matrix, comparison_industries, comparison_topics, topics_dummies)

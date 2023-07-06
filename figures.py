@@ -11,9 +11,6 @@ from scipy.stats import pearsonr, linregress
 from matplotlib.patches import Rectangle
 from utils import adjust_label
 
-# Convert to LaTeX-friendly font
-mpl.rcParams['text.usetex'] = True
-
 
 def plot_top_industries_figure(table_data):
     """
@@ -21,9 +18,7 @@ def plot_top_industries_figure(table_data):
     :param positions: the positions dataframe, deduplicated and with civil servants removed
     :return: None
     """
-    # Replace ampersands with LaTeX-friendly ampersands, if we are using LaTeX
-    if plt.rcParams['text.usetex']:
-        table_data.columns.str.replace("&", r"\&")
+    table_data.columns = table_data.columns.map(adjust_label)
 
     # Create a heatmap of the top industries in each state
     fig, (cbar_ax, ax) = plt.subplots(2, 1, figsize=(6.5, 11), height_ratios=[1, 20])
@@ -212,12 +207,12 @@ def plot_topic_correlation_coefficients(
     axes[1].legend(markers, labels, bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0., frameon=False,
                    fontsize=12, handlelength=0.5, handletextpad=0.5, labelspacing=0.5, title='Comparison industry')
 
-    fig.savefig('figures/figure_3.pdf', bbox_inches='tight')
-    fig.savefig('figures/figure_3.png', bbox_inches='tight', dpi=300)
+    fig.savefig('figures/figure_4.pdf', bbox_inches='tight')
+    fig.savefig('figures/figure_4.png', bbox_inches='tight', dpi=300)
     plt.show()
 
 
-def plot_topic_correlation_scatter(
+def plot_topic_correlation_scatter_main_text(
         adj_matrix: pd.DataFrame,
         adj_matrix_union: pd.DataFrame,
         adj_matrix_intersection: pd.DataFrame,
@@ -242,7 +237,6 @@ def plot_topic_correlation_scatter(
     passed_colors = {True: 'k', False: 'grey'}
     passed_lws = {True: 1, False: 0}
     vlines_kwargs = [0, -1, 1, 'grey', ':']
-    label_adjust = lambda c: c.replace('&', '\&').split('_')[-1].title()
 
     def annotate_stats(ax, *dfs):
         dy = 0
@@ -257,14 +251,17 @@ def plot_topic_correlation_scatter(
             slope = df_copy.corr(numeric_only=True, method=lambda x, y: linregress(x, y)[0]).loc[
                 kwargs['x'], kwargs['y']]
             n = len(df_copy.dropna(axis=0))
-            ax.annotate(r"$r_{% s} = %.2f$" % (label, r), [1.2, 1 - dy], transform=ax.transData, annotation_clip=False)
-            ax.annotate(r"$\beta_{% s} = %.2f$" % (label, slope), [1.2, 0.8 - dy], transform=ax.transData,
-                        annotation_clip=False)
-            ax.annotate(r"$p_{% s} = %.3f$" % (label, p), [1.2, 0.6 - dy], transform=ax.transData,
-                        annotation_clip=False)
-            ax.annotate(r"$N_{% s} = %i$" % (label, n), [1.2, 0.4 - dy], transform=ax.transData, annotation_clip=False)
 
-            dy += 1
+            annotation = '\n'.join([
+                r"$r_{% s} = %.2f$" % (label, r),
+                r"$\beta_{% s} = %.2f$" % (label, slope),
+                r"$p_{% s} = %.3f$" % (label, p),
+                r"$N_{% s} = %i$" % (label, n),
+            ])
+            ax.annotate(annotation, [1.1, 1 - dy], xycoords='axes fraction', fontsize=10,
+                        va='top', ha='left', annotation_clip=False)
+
+            dy += 0.5
 
     def plot_bill_scatter(condition: pd.Series, title: str, ax: plt.Axes):
         """
@@ -290,10 +287,12 @@ def plot_topic_correlation_scatter(
 
         _plot_bill_scatter_df(df_union, ax, 'grey')
 
-        ax.set_ylabel(label_adjust(kwargs['y']))
+        ax.set_ylabel(adjust_label(kwargs['y']))
         ax.set_title(title)
         ax.vlines(*vlines_kwargs, zorder=-100)
         ax.hlines(*vlines_kwargs, zorder=-100)
+        ax.set_xlim(-0.65, 0.65)
+        ax.set_ylim(-0.65, 0.65)
         annotate_stats(ax, df_union, df_intersection)
 
     condition = (topics_dummies['Renewable Energy Solar'] == 1)
@@ -304,16 +303,15 @@ def plot_topic_correlation_scatter(
     title = 'Wind'
     plot_bill_scatter(condition, title, axes[1])
 
-    axes[0].set_xlim(-1.1, 1.1)
-    axes[0].set_ylim(-1.1, 1.1)
-    axes[-1].set_xlabel(label_adjust(kwargs['x']))
+    axes[-1].set_xlabel(adjust_label(kwargs['x']))
     markers = [mpl.lines.Line2D([0], [0], ms=kwargs['s'] ** 0.5, mfc=passed_colors[False],
                                 marker='o', linewidth=0, mec='none', mew=passed_lws[False]),
                mpl.lines.Line2D([0], [0], ms=kwargs['s'] ** 0.5, mfc=passed_colors[True],
                                 marker='o', linewidth=0, mec='none', mew=passed_lws[True])]
     axes[0].legend(markers, ['Failed', 'Passed'])
-    fig.savefig('figures/figure_2.pdf', bbox_inches='tight')
-    fig.savefig('figures/figure_2.png', bbox_inches='tight', dpi=300)
+
+    fig.savefig('figures/figure_3.pdf', bbox_inches='tight')
+    fig.savefig('figures/figure_3.png', bbox_inches='tight', dpi=300)
     plt.show()
 
 
@@ -344,8 +342,7 @@ def plot_agree_probabilities(agree_probabilities, disagree_probabilities):
         disagree_probabilities.reindex(most_unfriendly.index.values).round(2)
         ]:
         ax = axes[flip_sign]
-        table_data.index = table_data.index.map(
-            lambda x: x.split('_')[1].replace('_', ' ').title().replace('&', '\&').replace("'S", "'s"))
+        table_data.index = table_data.index.map(adjust_label)
 
         cm = mpl.colors.LinearSegmentedColormap.from_list(
             "mycmap",
@@ -362,7 +359,7 @@ def plot_agree_probabilities(agree_probabilities, disagree_probabilities):
             linecolor='white',
             annot=True, fmt=".1f",
             annot_kws={'fontsize': 6},
-            cbar_kws={'format': '%.0f', 'label': 'P(' + ['support', 'oppose'][flip_sign] + ') [\%]'}
+            cbar_kws={'format': '%.0f', 'label': 'P(' + ['support', 'oppose'][flip_sign] + ') [%]'}
         )
 
         ax.set_ylabel("")
@@ -375,8 +372,6 @@ def plot_agree_probabilities(agree_probabilities, disagree_probabilities):
 
     axes[0].get_xaxis().set_visible(False)
     ax.set_xlabel("\n\n\n\n\nState and Record Type")
-
-
 
     new_labels = []
     i = 0
@@ -401,8 +396,8 @@ def plot_agree_probabilities(agree_probabilities, disagree_probabilities):
 
     _ = ax.set_xticklabels(new_labels, rotation=0)
 
-    fig.savefig('figures/figure_4.pdf', bbox_inches='tight')
-    fig.savefig('figures/figure_4.png', bbox_inches='tight', dpi=300)
+    fig.savefig('figures/figure_2.pdf', bbox_inches='tight')
+    fig.savefig('figures/figure_2.png', bbox_inches='tight', dpi=300)
     plt.show()
 
 
@@ -452,11 +447,11 @@ def plot_partisanship_figure(plotdata):
     ax3.yaxis.set_visible(False)
 
     ax1.set_title("Pro-Environmental Policy", fontsize=10)
-    ax2.set_title("Oil \& Gas/Mining", fontsize=10)
+    ax2.set_title("Oil & Gas/Mining", fontsize=10)
     ax3.set_title("Electric Utilities", fontsize=10)
 
     cbar = fig.colorbar(sm, ax=(ax1, ax2, ax3))
-    cbar.ax.set_ylabel('Fossil Fuel \% of GDP')
+    cbar.ax.set_ylabel('Fossil Fuel % of GDP')
 
     fig.savefig('figures/figure_5.pdf', bbox_inches='tight')
     fig.savefig('figures/figure_5.png', bbox_inches='tight', dpi=300)
@@ -519,7 +514,7 @@ def plot_utilities_p_disagree_main(data):
             horizontalalignment='center')
         for state, alignment, dereg in data[['state', 'alignment', 'deregulated']].values
     ]
-    ax4.set_ylabel("P(Disagree) (\%)")
+    ax4.set_ylabel("P(Disagree) (%)")
     ax4.set_yticklabels([round(i * 100, 1) for i in ax4.get_yticks()])
     ax4.set_xlabel("")
     ax4.set_xticklabels(['Regulated', 'Deregulated'])

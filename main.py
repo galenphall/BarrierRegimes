@@ -39,7 +39,16 @@ topics_dummies = topics_dummies.groupby(topics_dummies.index).max()
 
 
 if __name__ == '__main__':
-    # plt.rcParams['text.usetex'] = True
+
+    # Set some global matplotlib settings
+    plt.rcParams['font.family'] = 'serif'
+    plt.rcParams['font.serif'] = 'Minion Pro'
+
+    # Set the math font to Minion Pro
+    plt.rcParams['mathtext.fontset'] = 'custom'
+    plt.rcParams['mathtext.rm'] = 'Minion Pro'
+    plt.rcParams['mathtext.it'] = 'Minion Pro:italic'
+    plt.rcParams['mathtext.bf'] = 'Minion Pro:bold'
     plt.rcParams['xtick.direction'] = 'in'
     plt.rcParams['ytick.direction'] = 'in'
 
@@ -54,7 +63,7 @@ if __name__ == '__main__':
     importlib.reload(electric_utilities_disagreements)
     importlib.reload(environmental_industry_agree_probabilities)
 
-    top_industries = most_active_industries.main(False)
+    top_industries = most_active_industries.main(True)
 
     comparison_industries = [top_industries[0], *top_industries[2:11]][::-1]
     comparison_topics = [
@@ -67,10 +76,10 @@ if __name__ == '__main__':
         'Emissions'
     ]
 
-    # bill_topic_correlations.main(comparison_industries, comparison_topics)
+    bill_topic_correlations.main(comparison_industries, comparison_topics, True)
 
-    environmental_industry_agree_probabilities.main()
-
+    # environmental_industry_agree_probabilities.main()
+    #
     # structural_factors.main()
-
+    #
     # electric_utilities_disagreements.main()

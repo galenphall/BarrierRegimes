@@ -19,7 +19,6 @@ def main(plot_figure=True):
 
     # Create a table of the top industries in each state
     table_data = (industry_percentages[top_industries] * 100).round(2)
-    table_data.columns = table_data.columns.str.split("_").str[1].str.title()
 
     if plot_figure:
         plot_top_industries_figure(table_data)
