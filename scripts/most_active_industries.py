@@ -2,7 +2,7 @@ from main import positions
 from figures import plot_top_industries_figure
 
 
-def main():
+def main(plot_figure=True):
     no_civil_servants_no_duplicates_positions = positions[
         positions.ftm_industry.notna() &
         ~positions.ftm_industry.astype(str).str.contains('CIVIL SERVANTS/PUBLIC OFFICIALS')].drop_duplicates([
@@ -21,6 +21,7 @@ def main():
     table_data = (industry_percentages[top_industries] * 100).round(2)
     table_data.columns = table_data.columns.str.split("_").str[1].str.title()
 
-    plot_top_industries_figure(table_data)
+    if plot_figure:
+        plot_top_industries_figure(table_data)
 
     return top_industries

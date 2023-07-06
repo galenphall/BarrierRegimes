@@ -11,6 +11,9 @@ from scipy.stats import pearsonr, linregress
 from matplotlib.patches import Rectangle
 from utils import adjust_label
 
+# Convert to LaTeX-friendly font
+mpl.rcParams['text.usetex'] = True
+
 
 def plot_top_industries_figure(table_data):
     """
@@ -110,13 +113,19 @@ def plot_top_industries_figure(table_data):
     plt.show()
 
 
-def plot_topic_correlation_coefficients(comparison_industries, intersection_correlations, union_correlations):
+def plot_topic_correlation_coefficients(
+        comparison_industries,
+        intersection_correlations,
+        union_correlations,
+        bill_counts,
+        interest_group_counts,
+):
     fig, axes = plt.subplots(1, 2, figsize=(8, 11), sharex=True, sharey=True)
 
     # Map each comparison to a color
-    palette = sns.color_palette('tab10', n_colors=len(comparison_industries))
-    comparison_colors = dict(zip(comparison_industries, palette))
     n_comparisons = len(comparison_industries)
+    palette = sns.color_palette('tab10', n_colors=n_comparisons)
+    comparison_colors = dict(zip(comparison_industries, palette))
 
     def plot_correlations(correlations, ax):
         """
@@ -178,13 +187,19 @@ def plot_topic_correlation_coefficients(comparison_industries, intersection_corr
     ax.set_xlabel('Correlation coefficient - intersection')
     ax.set_xlim(-1.1, 1.1)
 
+    # add bill counts to y labels
+    yticklabels = [f"{label.get_text()} (N = {int(bill_counts[label.get_text()])})" for label in axes[0].get_yticklabels()]
+    axes[0].set_yticklabels(yticklabels)
+    axes[1].set_yticklabels(yticklabels)
+    ax.set_yticklabels(yticklabels)
+
     # Add legend showing colors
     markers = [mpl.lines.Line2D([0], [0],
                                 mfc=comparison_colors[comparison],
                                 color=comparison_colors[comparison],
                                 marker='o', linewidth=1, mec='none', mew=0)
                for comparison in comparison_industries]
-    labels = [adjust_label(comparison) for comparison in comparison_industries]
+    labels = [adjust_label(comparison) + f" (N = {interest_group_counts[comparison]})" for comparison in comparison_industries]
 
     markers = markers[::-1]
     labels = labels[::-1]
@@ -304,7 +319,7 @@ def plot_topic_correlation_scatter(
 
 def plot_agree_probabilities(agree_probabilities, disagree_probabilities):
     """
-
+    Plot the average probability of (dis)agreeing with the pro-environmental policy groups for each industry
     :param agree_probabilities:
     :param disagree_probabilities:
     :return:
@@ -340,24 +355,28 @@ def plot_agree_probabilities(agree_probabilities, disagree_probabilities):
             abs(table_data) * 100,
             cmap=cm,
             vmin=0,
-            vmax=20,
+            vmax=15,
             ax=ax,
             square=True,
             linewidths=1,
             linecolor='white',
-            annot=True, fmt=".0f",
+            annot=True, fmt=".1f",
+            annot_kws={'fontsize': 6},
             cbar_kws={'format': '%.0f', 'label': 'P(' + ['support', 'oppose'][flip_sign] + ') [\%]'}
         )
 
         ax.set_ylabel("")
+        # make y ticks invisible
+        ax.tick_params(axis='y', which='both', length=0)
 
         ax.set_title(f"One-way {['support', 'oppose'][flip_sign]} probability towards Pro-Environmental Policy\n")
 
         flip_sign = 1
 
-    # axes[0].set_xticklabels(None)
     axes[0].get_xaxis().set_visible(False)
     ax.set_xlabel("\n\n\n\n\nState and Record Type")
+
+
 
     new_labels = []
     i = 0
@@ -389,9 +408,11 @@ def plot_agree_probabilities(agree_probabilities, disagree_probabilities):
 
 def plot_partisanship_figure(plotdata):
     """
-
-    :param plotdata:
-    :return:
+    Plot the partisanship figure, which shows the average position of each industry on passed bills in a given
+    session against the partisanship of the state legislature, its mining share of GDP, and its deregulation
+    status.
+    :param plotdata: dataframe generated in structural_factors.py
+    :return: None
     """
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(9, 2.5), sharey=True)
 
@@ -443,6 +464,14 @@ def plot_partisanship_figure(plotdata):
 
 
 def plot_utilities_p_disagree_robustness_check(data, histdata):
+    """
+    Plots the observed vs. expected probability of disagreement (P(disagree)) for the pro-environmental policy groups
+    from the utilities groups. The observed probabilities are plotted as points, and the expected probabilities are
+    plotted as boxplots. The expected probabilities are calculated from the configuration models.
+    :param data: the data frame with the observed probabilities
+    :param histdata: the data frame with the simulated probabilities from configuration models
+    :return: None
+    """
     fig, (ax, ax2) = plt.subplots(1, 2, figsize=(6, 4), width_ratios=[3, 1], sharey=True)
     sns.boxplot(histdata, y='state', x='alignment', order=data.state.drop_duplicates(), ax=ax)
     ax.plot(data.alignment, data.state, marker='o', lw=0, mfc='w', mec='grey')
@@ -462,11 +491,17 @@ def plot_utilities_p_disagree_robustness_check(data, histdata):
     fig.suptitle(
         "Probability of electric utilities opposing environmenal nonprofits:\n" +
         "configuration model versus observed\n", )
-    fig.savefig("figures/figure_1_appendix.pdf", bbox_inches='tight')
-    fig.savefig("figures/figure_1_appendix.png", dpi=300, bbox_inches='tight')
+    fig.savefig("figures/figure_A1.pdf", bbox_inches='tight')
+    fig.savefig("figures/figure_A1.png", dpi=300, bbox_inches='tight')
 
 
 def plot_utilities_p_disagree_main(data):
+    """
+    Plot the probability that a randomly chosen utility company will oppose a randomly chosen environmental nonprofit
+    position. The utilities are grouped by whether they are in a deregulated state or not.
+    :param data: data frame with the probabilities, alignment, state, and deregulated status
+    :return: None
+    """
     fig, ax4 = plt.subplots(1, 1, figsize=(3, 3))
     sns.swarmplot(
         data,
@@ -500,3 +535,58 @@ def plot_utilities_p_disagree_main(data):
     ax4.set_ylim(0, ax4.get_ylim()[1] + 0.02)
     fig.savefig("figures/figure_6.png", dpi=300, bbox_inches='tight')
     fig.savefig("figures/figure_6.pdf", bbox_inches='tight')
+
+def plot_industry_to_industry_topic_scatters(adj_matrix, comparison_industries, comparison_topics, topics_dummies):
+    """
+    For each industry, and each topic, plot the average position of that industry against the average position of
+    the IDEOLOGY/SINGLE ISSUE_PRO-ENVIRONMENTAL POLICY industry on each bill in that topic. The result is a matrix of
+    scatter plots, where each row and column is an industry, and each cell is a scatter plot of the average position of
+    each industry against the average position of the PRO-ENVIRONMENTAL POLICY groups on each bill in that topic.
+
+    :param adj_matrix: the adjacency matrix of the bipartite network, where rows are bills and columns are industries
+    :param comparison_industries: the industries to compare
+    :param comparison_topics: the topics to compare
+    :param topics_dummies: the topics dummies, used to select bills (rows) in adj_matrix
+    :return:
+    """
+    fig, axes = plt.subplots(len(comparison_industries), len(comparison_topics), figsize=(10, 10),
+                             sharex=True, sharey=True, gridspec_kw={'wspace': 0.05, 'hspace': 0.05})
+
+    target_industry = 'IDEOLOGY/SINGLE ISSUE_PRO-ENVIRONMENTAL POLICY'
+
+    # font needs to be small to fit all the labels
+    fontdict = {'fontsize': 5,
+                'verticalalignment': 'center',
+                'horizontalalignment': 'center',
+                'rotation': 0}
+
+    for i, industry1 in enumerate(comparison_industries):
+        for j, topic in enumerate(comparison_topics):
+
+            bills = adj_matrix.loc[topics_dummies[topic] == 1].index
+            industry1_positions = adj_matrix.loc[bills, industry1]
+            target_industry_positions = adj_matrix.loc[bills, target_industry]
+            axes[i, j].scatter(industry1_positions, target_industry_positions, alpha=0.6,
+                               edgecolor='none', color='grey', s=3)
+            axes[i, j].set_xlim(-1.1, 1.1)
+            axes[i, j].set_ylim(-1.1, 1.1)
+            if i == 0:
+                fontdict['horizontalalignment'] = 'center'
+                fontdict['rotation'] = 0
+                axes[i, j].set_title(topic, fontdict=fontdict)
+            if j == 0:
+                fontdict['horizontalalignment'] = 'right'
+                # rotate the y label so that it reads left to right
+                fontdict['rotation'] = 90
+                axes[i, j].set_ylabel(adjust_label(industry1), fontdict=fontdict)
+
+
+    # add Pro-Environmental Policy label at center bottom of figure
+    fontdict.update({'fontsize': 12, 'rotation': 0, 'horizontalalignment': 'center', 'verticalalignment': 'center'})
+    fig.text(0.5, 0.05, adjust_label(target_industry), fontdict=fontdict)
+
+    fig.savefig("figures/figure_A2.png", dpi=300, bbox_inches='tight')
+    fig.savefig("figures/figure_A2.pdf", bbox_inches='tight')
+
+    plt.show()
+

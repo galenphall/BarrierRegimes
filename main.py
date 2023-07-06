@@ -1,3 +1,5 @@
+import importlib
+
 import pandas as pd
 from matplotlib import pyplot as plt
 from utils import extract_and_normalize_topics
@@ -45,10 +47,15 @@ if __name__ == '__main__':
     from scripts import bill_topic_correlations, most_active_industries, structural_factors, \
     electric_utilities_disagreements, environmental_industry_agree_probabilities
 
-    top_industries = most_active_industries.main()
+    # Reload the modules to ensure that changes are reflected as we iterate
+    importlib.reload(bill_topic_correlations)
+    importlib.reload(most_active_industries)
+    importlib.reload(structural_factors)
+    importlib.reload(electric_utilities_disagreements)
+    importlib.reload(environmental_industry_agree_probabilities)
 
-    # Compare Pro-Environmental Policy groups to the top 10 other industries
-    # on an array of topics related to energy and emissions
+    top_industries = most_active_industries.main(False)
+
     comparison_industries = [top_industries[0], *top_industries[2:11]][::-1]
     comparison_topics = [
         'Renewable Energy Wind',
@@ -61,9 +68,9 @@ if __name__ == '__main__':
     ]
 
     # bill_topic_correlations.main(comparison_industries, comparison_topics)
-    #
-    # environmental_industry_agree_probabilities.main()
-    #
+
+    environmental_industry_agree_probabilities.main()
+
     # structural_factors.main()
 
-    electric_utilities_disagreements.main()
+    # electric_utilities_disagreements.main()

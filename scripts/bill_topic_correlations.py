@@ -1,9 +1,10 @@
 from collections import defaultdict
 
 import numpy as np
-from scipy.stats import pearsonr
+from scipy.stats import pearsonr, spearmanr
 
-from figures import plot_topic_correlation_coefficients, plot_topic_correlation_scatter
+from figures import plot_topic_correlation_coefficients, plot_topic_correlation_scatter, \
+    plot_industry_to_industry_topic_scatters
 from main import positions, bills, topics_dummies
 
 
@@ -105,6 +106,9 @@ def create_correlations(comparison_topics, comparison_industries, adj_matrix_int
                     correlations[topic][comparison] = pearsonr(filtered_adj_matrix[selected_industries].values[:, 0],
                                                                filtered_adj_matrix[selected_industries].values[:, 1])
 
+                    # spearman_coef = spearmanr(filtered_adj_matrix[selected_industries].values[:, 0],
+                    #           filtered_adj_matrix[selected_industries].values[:, 1])
+
         return correlations
 
     union_correlations = get_correlations(adj_matrix_union)
@@ -122,5 +126,11 @@ def main(comparison_industries, comparison_topics):
         adj_matrix_intersection=adj_matrix_intersection,
         adj_matrix_union=adj_matrix_union)
 
-    plot_topic_correlation_coefficients(comparison_industries, intersection_correlations, union_correlations)
-    plot_topic_correlation_scatter(adj_matrix, adj_matrix_union, adj_matrix_intersection, topics_dummies)
+    bill_counts = topics_dummies[comparison_topics].sum()
+    interest_group_counts = positions[positions.ftm_industry.isin(comparison_industries)].groupby('ftm_industry').client_uuid.nunique()
+
+    # plot_topic_correlation_coefficients(comparison_industries, intersection_correlations, union_correlations, bill_counts, interest_group_counts)
+    #
+    # plot_topic_correlation_scatter(adj_matrix, adj_matrix_union, adj_matrix_intersection, topics_dummies)
+
+    plot_industry_to_industry_topic_scatters(adj_matrix, comparison_industries, comparison_topics, topics_dummies)
