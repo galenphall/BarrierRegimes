@@ -177,7 +177,7 @@ def get_expected_agreements(
     summed_position_product = data[data.source_ftm == source_industry].groupby(['target_ftm'])['position_product'].sum()
 
     # Count the number of interest groups in each industry_id
-    industry_counts = data.drop_duplicates('target').target_ftm.value_counts()
+    industry_counts = adj_matrix.index.map(ftm_industries).value_counts()
 
     # Normalize by the number of bills that the source industry_id has a position on and the number of interest groups
     # in the industry_id of interest
