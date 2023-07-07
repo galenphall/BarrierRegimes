@@ -10,9 +10,9 @@ from utils import get_bipartite_adjacency_matrix_kcore, get_expected_agreements
 from main import positions, client_uuid_to_ftm_industry
 
 
-def main():
+def main(recompute=False):
     # Check whether we have already calculated the expected probabilities of agreement and disagreement
-    if os.path.exists('data/agreement_probabilities/agree.parquet'):
+    if os.path.exists('data/agreement_probabilities/agree.parquet') and not recompute:
         print("Loading agreement probabilities from disk")
         agree_probabilities = pd.read_parquet('data/agreement_probabilities/agree.parquet')
         disagree_probabilities = pd.read_parquet('data/agreement_probabilities/disagree.parquet')

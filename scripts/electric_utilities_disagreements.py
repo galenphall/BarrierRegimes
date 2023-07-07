@@ -42,7 +42,7 @@ def filter_topics(row):
     ael = row.ael_category
     return any(e in [*ncsl, ael] for e in energy_relevant_topics)
 
-def main():
+def main(recompute=False):
 
     from main import positions, bills, client_uuid_to_ftm_industry, deregulated
 
@@ -98,7 +98,7 @@ def main():
         config_disagreements.to_parquet('data/configuration_model_utility_disagreements.parquet')
         return config_disagreements
 
-    if not os.path.exists('data/configuration_model_utility_disagreements.parquet'):
+    if not os.path.exists('data/configuration_model_utility_disagreements.parquet') or recompute:
         print("Generating null model disagreements")
         config_disagreements = generate_null_model_disagreements(power_generation_bills)
     else:

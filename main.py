@@ -77,8 +77,8 @@ if __name__ == '__main__':
 
     bill_topic_correlations.main(comparison_industries, comparison_topics, True)
 
-    environmental_industry_agree_probabilities.main()
+    environmental_industry_agree_probabilities.main(True)
 
     structural_factors.main()
 
-    electric_utilities_disagreements.main()
+    electric_utilities_disagreements.main(True)
