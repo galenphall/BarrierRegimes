@@ -32,6 +32,8 @@ def main():
                 region[region.LineCode == 1.0][years].iloc[0]))
     mining_percent_gdp.columns = mining_percent_gdp.columns.astype(int)
     mining_percent_gdp.columns.name = 'year'
+    # Backfill missing values
+    mining_percent_gdp = mining_percent_gdp.fillna(method='bfill', axis=1)
     mining_percent_gdp = mining_percent_gdp.stack() * 100
     mining_percent_gdp.name = 'MiningPctGdp'
 
@@ -156,7 +158,7 @@ def main():
         'ElcUtl': 'Electric Utilities',
     }
 
-    regression_table = pd.DataFrame(index=['Mining', 'Partisanship', 'Deregulated', 'R-squared', 'N', 'State FE'])
+    regression_table = pd.DataFrame(index=['Intercept', 'Mining', 'Partisanship', 'Deregulated', 'R-squared', 'N', 'State FE'])
 
     def get_model_coefficient_for_table(model, coefficient):
         coef = model.params[coefficient]
@@ -182,6 +184,7 @@ def main():
         # add the column for the cross-sectional model
         model = models[industry]
         regression_table[(industry_names[industry], 'Cross-Sectional')] = [
+            get_model_coefficient_for_table(model, 'Intercept'),
             get_model_coefficient_for_table(model, 'MiningPctGdp'),
             get_model_coefficient_for_table(model, 'AvgPartisanship'),
             get_model_coefficient_for_table(model, 'deregulated'),
@@ -192,9 +195,10 @@ def main():
         # add the column for the panel model
         model = panel_models[industry]
         regression_table[(industry_names[industry], 'Panel')] = [
+            np.nan, # no intercept in panel model
             get_model_coefficient_for_table(model, 'MiningPctGdp'),
             get_model_coefficient_for_table(model, 'AvgPartisanship'),
-            np.nan,
+            np.nan, # no deregulated in panel model because it is absorbed by the state fixed effects
             model.rsquared,
             model.nobs,
             'Yes']

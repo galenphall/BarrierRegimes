@@ -475,7 +475,7 @@ def plot_utilities_p_disagree_robustness_check(data, histdata):
     ax.set_xlabel("P(disagree)")
     ax.hlines(6.5, 0, .23, 'k', ':')
     ax.set_xlim(0, 0.23)
-    ax.text(0.15, "MO", "Regulated", verticalalignment='bottom')
+    ax.text(0.15, "CO", "Regulated", verticalalignment='bottom')
     ax.text(0.15, "MA", "Deregulated", verticalalignment='top')
     ax2.barh(width=data.alignment - data.expected, y=data.state, edgecolor='k', color='grey', height=0.5)
     ax2.vlines(data[data.deregulated].alignment.mean() - data[data.deregulated].expected.mean(), 7, 11, 'r', '--')
