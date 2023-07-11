@@ -68,7 +68,7 @@ def main():
             ['client_uuid', 'bill_identifier'])
 
         # Map the session of each bill's passage to its year
-        session_to_year = positions.groupby('unified_session').year.max().to_dict()
+        session_to_year = positions.groupby(['unified_session', 'state']).year.max().to_dict()
 
         # Select positions on passed bills
         industry_positions_passed_bills = industry_positions[industry_positions.bill_identifier.map(passed)]
@@ -83,7 +83,7 @@ def main():
         data = pd.concat([net, passed_n_positions, passed_n_bills], axis=1).reset_index(drop=False)
         data.columns = ['state', 'unified_session', 'net_on_passed', 'n_positions_on_passed', 'n_bills_passed']
         data['clients_in_industry'] = data.state.map(clients_in_industry)
-        data['year'] = data.unified_session.map(session_to_year)
+        data['year'] = data.apply(lambda row: session_to_year[(row.unified_session, row.state)], axis=1)
         data = data.groupby(['state', 'year']).sum(numeric_only=True)
         data['passed_avg_pos'] = data.net_on_passed / data.n_positions_on_passed
 
@@ -111,6 +111,8 @@ def main():
     plotdata = plotdata[plotdata.state.isin(positions.state.unique())]
 
     plot_partisanship_figure(plotdata)
+
+    plotdata.to_csv('tables/structural_factors_plotdata.csv', index=False)
 
     ###############################
     # Regression Models for tables 2 and 3
@@ -205,3 +207,4 @@ def main():
 
         # Save the regression table to an Excel file.
         regression_table.to_excel('tables/regression_table.xlsx')
+        regression_table.to_csv('tables/regression_table.csv')

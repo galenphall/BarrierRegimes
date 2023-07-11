@@ -62,23 +62,23 @@ if __name__ == '__main__':
     from scripts import bill_topic_correlations, most_active_industries, structural_factors, \
     electric_utilities_disagreements, environmental_industry_agree_probabilities
 
-    top_industries = most_active_industries.main(True)
+    # top_industries = most_active_industries.main(True)
+    #
+    # comparison_industries = [top_industries[0], *top_industries[2:11]][::-1]
+    # comparison_topics = [
+    #     'Renewable Energy Wind',
+    #     'Renewable Energy Solar',
+    #     'Fossil Energy Coal',
+    #     'Fossil Energy Natural Gas',
+    #     'Nuclear Energy Facilities',
+    #     'Energy Efficiency',
+    #     'Emissions'
+    # ]
 
-    comparison_industries = [top_industries[0], *top_industries[2:11]][::-1]
-    comparison_topics = [
-        'Renewable Energy Wind',
-        'Renewable Energy Solar',
-        'Fossil Energy Coal',
-        'Fossil Energy Natural Gas',
-        'Nuclear Energy Facilities',
-        'Energy Efficiency',
-        'Emissions'
-    ]
-
-    bill_topic_correlations.main(comparison_industries, comparison_topics, True)
-
-    environmental_industry_agree_probabilities.main(True)
+    # bill_topic_correlations.main(comparison_industries, comparison_topics, True)
+    #
+    # environmental_industry_agree_probabilities.main(True)
 
     structural_factors.main()
 
-    electric_utilities_disagreements.main(True)
+    electric_utilities_disagreements.main()
