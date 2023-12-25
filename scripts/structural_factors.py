@@ -13,7 +13,6 @@ from figures import plot_partisanship_figure
 
 def main():
 
-
     def cast_float(x):
         try:
             return float(x)
@@ -95,9 +94,11 @@ def main():
         ['ENERGY & NATURAL RESOURCES_OIL & GAS', 'ENERGY & NATURAL RESOURCES_MINING'])
     elcutl_positions = industry_passed_session_stats('ENERGY & NATURAL RESOURCES_ELECTRIC UTILITIES')
 
-    # Calculate average partisanship between both chambers in each state and year
+    # Calculate average partisanship between both chambers in each state and year.
+    # Replace with "sen_majority" and "hou_majority" to use majority party instead of chamber.
+    # Replace with "sen_rep_pct" and "hou_rep_pct" to use pct of Republicans instead of partisanship.
     avgpartisanship = partisanship.groupby(['st', 'year']).apply(
-        lambda x: x[['hou_chamber', 'sen_chamber']].mean().mean())
+        lambda x: x[['hou_majority', 'sen_majority']].mean().mean())
     avgpartisanship.name = 'AvgPartisanship'
 
     plotdata = pd.concat([mining_percent_gdp,

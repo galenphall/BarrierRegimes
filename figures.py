@@ -468,7 +468,7 @@ def plot_utilities_p_disagree_robustness_check(data, histdata):
     :return: None
     """
     fig, (ax, ax2) = plt.subplots(1, 2, figsize=(6, 4), width_ratios=[3, 1], sharey=True)
-    sns.boxplot(histdata, y='state', x='alignment', order=data.state.drop_duplicates(), ax=ax)
+    sns.boxplot(data=histdata, y='state', x='alignment', order=data.state.drop_duplicates(), ax=ax)
     ax.plot(data.alignment, data.state, marker='o', lw=0, mfc='w', mec='grey')
     ax.set_xlim(0, 0.23)
     ax.set_xticklabels([round(i * 100, 1) for i in ax.get_xticks()])
@@ -499,7 +499,7 @@ def plot_utilities_p_disagree_main(data):
     """
     fig, ax4 = plt.subplots(1, 1, figsize=(3, 3))
     sns.swarmplot(
-        data,
+        data=data,
         x='deregulated',
         y='alignment',
         edgecolor='none',
